@@ -58,7 +58,6 @@ targets:
       schema: audio_dev  # CI/CD dev schema; local devs override this to audio_<shortname> via databricks.local.yml
 
     presets:
-      name_prefix: 'dev_'  # prevents name collision with prod resources in the same workspace
       pipelines_development: true # set development to true for pipelines
       trigger_pause_status: PAUSED # set pause_status to PAUSED for all triggers and schedules
       jobs_max_concurrent_runs: 10 # set max_concurrent runs to 10 for all jobs
