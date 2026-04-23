@@ -100,7 +100,6 @@ The core Databricks solution. Contains:
 - **`tests/`** — Unit tests for transformations
 
 **For detailed documentation**, see [speech_to_text_asset_bundle/README.md](speech_to_text_asset_bundle/README.md)
-**For detailed documentation**, see [speech_to_text_asset_bundle/README.md](speech_to_text_asset_bundle/README.md)
 
 ### `/.github/workflows`
 
@@ -146,23 +145,29 @@ git push origin dev      # Deploys to Dev environment
 git push origin main     # Deploys to Prod environment
 ```
 
-### Manual (Databricks CLI)
+### Manual / Local (Databricks CLI)
+
+Copy the local config template and fill in your workspace details — no `--var` flags needed after that:
 
 ```bash
 cd speech_to_text_asset_bundle
+cp databricks.local.yml.example databricks.local.yml
+# Edit databricks.local.yml: set host, root_path, and service_principal_id
 
 # Validate configuration
 databricks bundle validate --target dev
 
-# Deploy to dev
-databricks bundle deploy --target dev --var="service_principal_id=<uuid>"
+# Deploy to dev (schema resolves to audio_<your-short-name>)
+databricks bundle deploy --target dev
 
-# Deploy to prod
-databricks bundle deploy --target prod --var="service_principal_id=<uuid>"
+# First-time only: provision the shared Whisper endpoint
+databricks bundle run stt_infrastructure_setup --target dev
 
 # Run the full pipeline (transcription → NLP enrichment → gold layer + evaluation)
-databricks bundle run stt_main
+databricks bundle run stt_main --target dev
 ```
+
+See [speech_to_text_asset_bundle/README.md](speech_to_text_asset_bundle/README.md) for the full local development guide.
 
 ---
 
