@@ -1,4 +1,4 @@
-name: Sync Git Folder and Deploy Dev
+name: Deploy Dev
 
 concurrency: dev_environment
 
@@ -20,7 +20,7 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    name: 'Sync Git Folder and Deploy Dev'
+    name: 'Deploy Dev'
     environment: Dev
     # ========================================================================
     # REQUIRED ENVIRONMENT CONFIGURATION
@@ -57,12 +57,7 @@ jobs:
       
       - name: Install Databricks CLI
         uses: databricks/setup-cli@main
-       
-      # Update command will sync the git folder in Databricks with the branch you specify. (dev)
-      - name: Update git folder
-        # Set your workspace path and branch name here
-        run: databricks repos update /Workspace/Shared/Speech-To-Text-With-Databricks --branch dev
-      
+
       # Validate the asset bundle to ensure it is correctly configured before deployment. 
       # Checks for issues such as missing variables, incorrect configurations, or other potential problems that could cause deployment to fail.
       - name: Validate asset bundle for dev

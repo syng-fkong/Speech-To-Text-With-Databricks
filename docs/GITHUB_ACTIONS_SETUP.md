@@ -108,12 +108,12 @@ In the **Prod** environment, add the following **Environment secrets**:
 
 The repository includes two GitHub Actions workflows:
 
-1. **`sync_git_folder_and_deploy_adb_dev.yml`**
+1. **`deploy_adb_dev.yml`**
    - Triggers on push to `dev` branch
    - Uses `Dev` environment
-   - Syncs Git folder and deploys to dev target
+   - Deploys bundle to dev target
 
-2. **`sync_git_folder_and_deploy_adb_prod.yml`**
+2. **`deploy_adb_prod.yml`**
    - Triggers on push to `main` branch
    - Uses `Prod` environment
    - Deploys bundle to prod target
