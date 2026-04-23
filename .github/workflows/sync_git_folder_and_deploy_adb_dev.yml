@@ -94,6 +94,10 @@ jobs:
             --target dev \
             --var="service_principal_id=${{ secrets.DATABRICKS_CLIENT_ID }}" \
             --auto-approve || true
+          databricks bundle deployment bind stt_whisper_endpoint "stt-whisper-large-v3" \
+            --target dev \
+            --var="service_principal_id=${{ secrets.DATABRICKS_CLIENT_ID }}" \
+            --auto-approve || true
 
       # Deploy the asset bundle to the development environment.
       # The --auto-approve flag allows the deployment to proceed without manual confirmation, which is useful for automated workflows.
