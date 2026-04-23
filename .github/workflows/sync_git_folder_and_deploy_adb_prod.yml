@@ -71,10 +71,22 @@ jobs:
       - name: Validate asset bundle for prod
         working-directory: ./speech_to_text_asset_bundle
         run: databricks bundle validate --target prod --var="service_principal_id=${{ secrets.DATABRICKS_CLIENT_ID }}"
-        
+
       - name: Plan asset bundle for prod
         working-directory: ./speech_to_text_asset_bundle
         run: databricks bundle plan --target prod --var="service_principal_id=${{ secrets.DATABRICKS_CLIENT_ID }}"
+
+      # Bind any pre-existing workspace resources (schema) to the bundle's
+      # Terraform state so deploy doesn't try to re-create them. The '|| true'
+      # means a bind failure (resource doesn't exist yet) is non-fatal — Terraform
+      # will create it normally on the next step.
+      - name: Bind existing resources to bundle state
+        working-directory: ./speech_to_text_asset_bundle
+        run: |
+          databricks bundle deployment bind prod "speech_to_text.audio_prod" \
+            --target prod \
+            --var="service_principal_id=${{ secrets.DATABRICKS_CLIENT_ID }}" \
+            --auto-approve || true
       
       # ========================================================================
       # DEPLOY ASSET BUNDLE TO PRODUCTION

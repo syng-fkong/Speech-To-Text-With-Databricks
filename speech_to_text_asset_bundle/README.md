@@ -324,7 +324,7 @@ def my_table():
 
 ```text
 speech_to_text (catalog)
-├── audio (schema — CI/CD dev + prod environment)
+├── audio_dev (schema — CI/CD dev, owned by service principal)
 │   ├── files (volume — managed)
 │   │   ├── [audio files: .wav, .mp3, .flac, .m4a, .ogg, .mp4]
 │   │   └── _schema_metadata/              <- Auto Loader schema inference metadata
@@ -334,9 +334,10 @@ speech_to_text (catalog)
 │   ├── silver_audio_nlp_ai_query          <- stt_nlp_enrichment pipeline
 │   ├── gold_audio_sentiment_analysis      <- stt_gold_layer pipeline
 │   ├── gold_audio_daily_stats             <- stt_gold_layer pipeline
-│   ├── gold_audio_sentiment_by_topic      <- stt_gold_layer pipeline
-│   └── stt-whisper-large-v3_payload       <- Whisper AI gateway inference table
-└── audio_<shortname> (schema — per-developer local dev)
+│   └── gold_audio_sentiment_by_topic      <- stt_gold_layer pipeline
+├── audio_prod (schema — CI/CD prod, owned by service principal)
+│   └── [same pipeline tables, production data]
+└── audio_<shortname> (schema — per-developer local dev, owned by developer)
     ├── files (volume — managed, personal copy)
     └── [same pipeline tables, developer's data]
 ```
