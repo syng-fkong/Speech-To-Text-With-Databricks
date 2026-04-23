@@ -79,10 +79,26 @@ jobs:
              --target dev 
              --var="service_principal_id=${{ secrets.DATABRICKS_CLIENT_ID }}"
       
-      # Deploy the asset bundle to the development environment. 
+      # Bind any pre-existing workspace resources (schema, volume) to the bundle's
+      # Terraform state so deploy doesn't try to re-create them. The '|| true'
+      # means a bind failure (resource doesn't exist yet) is non-fatal — Terraform
+      # will create it normally on the next step.
+      - name: Bind existing resources to bundle state
+        working-directory: ./speech_to_text_asset_bundle
+        run: |
+          databricks bundle deployment bind dev "speech_to_text.audio" \
+            --target dev \
+            --var="service_principal_id=${{ secrets.DATABRICKS_CLIENT_ID }}" \
+            --auto-approve || true
+          databricks bundle deployment bind files "speech_to_text.audio.files" \
+            --target dev \
+            --var="service_principal_id=${{ secrets.DATABRICKS_CLIENT_ID }}" \
+            --auto-approve || true
+
+      # Deploy the asset bundle to the development environment.
       # The --auto-approve flag allows the deployment to proceed without manual confirmation, which is useful for automated workflows.
       - name: Deploy asset bundle to dev
         working-directory: ./speech_to_text_asset_bundle
-        run: databricks bundle deploy --auto-approve 
-             --target dev 
+        run: databricks bundle deploy --auto-approve
+             --target dev
              --var="service_principal_id=${{ secrets.DATABRICKS_CLIENT_ID }}"
