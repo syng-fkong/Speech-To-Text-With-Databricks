@@ -1,0 +1,37 @@
+# Template for local development overrides.
+#
+# HOW TO USE:
+#   1. Copy this file: cp databricks.local.yml.example databricks.local.yml
+#   2. Fill in DATABRICKS_HOST and your workspace email below.
+#   3. Confirm service_principal_id matches the project SP UUID (ask the team lead).
+#   4. Do not commit databricks.local.yml — it is listed in .gitignore.
+#
+# IDENTITY MODEL:
+#   Local deploy  → runs as YOU (human user), schema is audio_<yourname>
+#   CI/CD deploy  → runs as service principal, schema is audio (shared dev environment)
+#
+#   Each developer gets their own isolated Unity Catalog schema and volume.
+#   No cross-grants between your schema and the service principal are needed.
+#   Upload test audio files to YOUR volume: speech_to_text.audio_<yourname>.files
+
+targets:
+  dev:
+    workspace:
+      host: https://<YOUR_WORKSPACE>.azuredatabricks.net
+      # Personal root_path avoids "writable by all users" warning on Shared paths.
+      root_path: /Workspace/Users/<YOUR_EMAIL>/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      service_principal_id: <SP_APPLICATION_UUID>
+      # ${workspace.current_user.short_name} resolves automatically to the part
+      # before @ in your workspace email — no manual editing required.
+      schema: audio_${workspace.current_user.short_name}
+      # Genie Space and dashboard get a per-user display name to avoid conflicts
+      # with CI/CD and other developers' Genie Spaces.
+      genie_space_name: "Speech to Text Analytics (${workspace.current_user.short_name})"
+
+  prod:
+    workspace:
+      host: https://<YOUR_WORKSPACE>.azuredatabricks.net
+      root_path: /Workspace/Users/<YOUR_EMAIL>/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      service_principal_id: <SP_APPLICATION_UUID>

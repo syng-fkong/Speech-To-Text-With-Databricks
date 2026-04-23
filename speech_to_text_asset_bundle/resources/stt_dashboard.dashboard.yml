@@ -9,7 +9,7 @@
 resources:
   dashboards:
     stt_analytics:
-      display_name: "Speech to Text Analytics"
+      display_name: ${var.genie_space_name}
       file_path: ../src/dashboards/stt_analytics.lvdash.json
       warehouse_id: ${var.warehouse_id}
       # Default catalog and schema for all dataset SQL queries in the dashboard.

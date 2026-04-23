@@ -1,0 +1,47 @@
+# One-time infrastructure setup job for shared workspace resources.
+#
+# The Whisper Model Serving endpoint is shared across all environments (dev, prod)
+# and all developers in the same workspace. It is NOT managed by the bundle
+# lifecycle to avoid ownership conflicts between developers and the CI/CD
+# service principal.
+#
+# Run this job:
+#   - Once after the first bundle deployment to provision the endpoint
+#   - Whenever the endpoint configuration needs to change (model version,
+#     scaling, inference table target)
+#
+# The notebook is idempotent: if the endpoint already exists it is updated
+# in-place; if it does not exist it is created. CAN_QUERY is granted to all
+# workspace users on every run.
+
+resources:
+  jobs:
+    stt_infrastructure_setup:
+      name: stt_infrastructure_setup
+      description: >-
+        One-time setup job that creates or updates the shared Whisper Model
+        Serving endpoint and grants CAN_QUERY to all workspace users. Idempotent:
+        safe to re-run after configuration changes.
+
+      parameters:
+        - name: endpoint_name
+          default: ${var.stt_model}
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: audio
+
+      tasks:
+        - task_key: create_whisper_endpoint
+          notebook_task:
+            notebook_path: ../src/stt_infrastructure/create_whisper_endpoint.py
+            base_parameters:
+              endpoint_name: "{{job.parameters.endpoint_name}}"
+              catalog:       "{{job.parameters.catalog}}"
+              schema:        "{{job.parameters.schema}}"
+          environment_key: serverless_env
+
+      environments:
+        - environment_key: serverless_env
+          spec:
+            client: "1"

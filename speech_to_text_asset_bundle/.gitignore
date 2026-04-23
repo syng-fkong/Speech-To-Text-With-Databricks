@@ -1,4 +1,4 @@
-.databricks/s
+.databricks/
 build/
 dist/
 __pycache__/
@@ -9,3 +9,4 @@ scratch/**
 **/explorations/**
 **/!explorations/README.md
 databricks.yml.local
+databricks.local.yml

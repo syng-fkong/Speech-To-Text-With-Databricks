@@ -68,21 +68,55 @@ Grant the service principal access to your workspace:
 
 ### Step 2.3: Grant Catalog and Schema Permissions
 
-The service principal needs the following permissions:
+Run the following SQL in the Databricks SQL Editor as a catalog admin.
+Replace `<service_principal_application_id>` with the UUID from Step 2.1.
 
 ```sql
--- Grant permissions on the catalog
-GRANT USE CATALOG ON CATALOG speech_to_text TO `<service_principal_application_id>`;
+-- ============================================================
+-- Speech-To-Text Service Principal Permission Grants
+-- Run in: Databricks SQL Editor (as a catalog admin)
+-- ============================================================
 
--- Grant permissions on schemas
-GRANT USE SCHEMA, CREATE TABLE ON SCHEMA speech_to_text.audio TO `<service_principal_application_id>`;
-GRANT USE SCHEMA, CREATE TABLE ON SCHEMA speech_to_text.prod TO `<service_principal_application_id>`;
+-- Catalog-level: navigate into the catalog and create schemas
+GRANT USE CATALOG, CREATE SCHEMA ON CATALOG speech_to_text
+  TO `<service_principal_application_id>`;
 
--- Grant permissions on volumes (created by the bundle)
-GRANT READ VOLUME, WRITE VOLUME ON VOLUME speech_to_text.audio.files TO `<service_principal_application_id>`;
+-- Schema-level (audio): full runtime access for all three pipelines
+GRANT USE SCHEMA, CREATE TABLE, SELECT, MODIFY ON SCHEMA speech_to_text.audio
+  TO `<service_principal_application_id>`;
+
+-- Volume: read audio files uploaded to the volume (bronze ingestion)
+GRANT READ VOLUME, WRITE VOLUME ON VOLUME speech_to_text.audio.files
+  TO `<service_principal_application_id>`;
+
+-- Schema-level (prod): parity for when the prod target is deployed
+GRANT USE SCHEMA, CREATE TABLE, SELECT, MODIFY ON SCHEMA speech_to_text.prod
+  TO `<service_principal_application_id>`;
 ```
 
-**Note**: Replace `<service_principal_application_id>` with the UUID from Step 2.1.
+### Step 2.4: Grant Read Access to Human Users
+
+For each developer or analyst who needs to query tables via dashboards or Genie,
+replace `<user_email>` with their Databricks account email address.
+
+```sql
+-- ============================================================
+-- Speech-To-Text User Permission Grants
+-- Run in: Databricks SQL Editor (as a catalog admin)
+-- ============================================================
+
+-- Allow navigating into the catalog
+GRANT USE CATALOG ON CATALOG speech_to_text
+  TO `<user_email>`;
+
+-- Allow navigating into the schema
+GRANT USE SCHEMA ON SCHEMA speech_to_text.audio
+  TO `<user_email>`;
+
+-- Read access on all current and future tables in the schema
+GRANT SELECT ON SCHEMA speech_to_text.audio
+  TO `<user_email>`;
+```
 
 ---
 
