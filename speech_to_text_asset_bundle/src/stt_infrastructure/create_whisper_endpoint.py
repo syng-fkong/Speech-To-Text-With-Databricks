@@ -3,9 +3,9 @@
 # grants CAN_QUERY to all workspace users.
 #
 # The endpoint is shared across all environments (dev, prod) and all developers
-# in the same workspace — it is NOT managed by the bundle lifecycle. Run this
-# notebook once after the first deployment, and re-run it only when the endpoint
-# configuration needs to change (e.g. scaling, model version upgrade).
+# in the same workspace — it is NOT managed by the bundle lifecycle to avoid
+# ownership conflicts. Run this notebook once after the first deployment, and
+# re-run it only when the endpoint configuration needs to change.
 #
 # Idempotent: if the endpoint already exists its config is updated in-place;
 # if it does not exist it is created from scratch.
@@ -33,9 +33,6 @@ from databricks.sdk.service.serving import (
     ServedEntityInput,
     ServingEndpointAccessControlRequest,
     ServingEndpointPermissionLevel,
-    AiGatewayConfig,
-    AiGatewayInferenceTableConfig,
-    AiGatewayUsageTrackingConfig,
 )
 
 w = WorkspaceClient()
@@ -55,16 +52,6 @@ endpoint_config = EndpointCoreConfigInput(
             scale_to_zero_enabled=True,
         )
     ]
-)
-
-ai_gateway_config = AiGatewayConfig(
-    inference_table_config=AiGatewayInferenceTableConfig(
-        enabled=True,
-        catalog_name=catalog,
-        schema_name=schema,
-        table_name_prefix=endpoint_name,
-    ),
-    usage_tracking_config=AiGatewayUsageTrackingConfig(enabled=True),
 )
 
 # COMMAND ----------
@@ -92,14 +79,27 @@ else:
     print(f"Updated endpoint '{endpoint_name}' (id: {endpoint.id})")
 
 # COMMAND ----------
-# Apply AI Gateway (inference table logging + usage tracking).
+# Apply AI Gateway only on first creation — skip if the endpoint already existed.
+# Re-configuring on an existing endpoint fails if the inference table already
+# exists in Unity Catalog (the table is created once and is immutable).
 
-w.serving_endpoints.put_ai_gateway(
-    name=endpoint_name,
-    inference_table_config=ai_gateway_config.inference_table_config,
-    usage_tracking_config=ai_gateway_config.usage_tracking_config,
-)
-print("AI Gateway configured.")
+if existing is None:
+    w.api_client.do(
+        "PUT",
+        f"/api/2.0/serving-endpoints/{endpoint_name}/ai-gateway",
+        body={
+            "inference_table_config": {
+                "enabled": True,
+                "catalog_name": catalog,
+                "schema_name": schema,
+                "table_name_prefix": endpoint_name,
+            },
+            "usage_tracking_config": {"enabled": True},
+        },
+    )
+    print("AI Gateway configured.")
+else:
+    print("AI Gateway skipped — endpoint already exists with existing inference table config.")
 
 # COMMAND ----------
 # Grant CAN_QUERY to all workspace users.
