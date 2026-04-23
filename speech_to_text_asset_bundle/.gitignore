@@ -9,3 +9,4 @@ scratch/**
 **/explorations/**
 **/!explorations/README.md
 databricks.yml.local
+databricks.local.yml
