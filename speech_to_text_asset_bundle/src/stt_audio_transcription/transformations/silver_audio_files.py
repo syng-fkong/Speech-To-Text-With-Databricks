@@ -4,6 +4,10 @@ from pyspark.sql.functions import col, regexp_extract, lower
 # Supported audio extensions (must match the pathGlobFilter in bronze)
 SUPPORTED_EXTENSIONS = ["wav", "mp3", "flac", "m4a", "ogg", "mp4"]
 
+# Whisper model serving endpoint hard limit is 16,777,216 bytes (16 MiB).
+# We cap at 15 MiB to leave room for HTTP framing overhead.
+MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024  # 15,728,640 bytes
+
 # Pipeline-level parameters set in stt_audio_ingestion.pipeline.yml
 # stt_model: name of the Whisper Model Serving endpoint used for transcription
 stt_model = spark.conf.get("stt_model")
@@ -43,8 +47,12 @@ def silver_audio_transcription():
         # Keep only supported audio formats (must match pathGlobFilter in bronze)
         .filter(col("file_extension").isin(SUPPORTED_EXTENSIONS))
 
-        # Discard empty files before calling the serving endpoint
+        # Discard empty files and files exceeding the Whisper endpoint payload limit.
+        # Files > MAX_FILE_SIZE_BYTES (15 MiB) will be silently dropped from this
+        # table. To process large files, pre-split them into shorter segments before
+        # uploading to the volume.
         .filter(col("file_size_bytes") > 0)
+        .filter(col("file_size_bytes") <= MAX_FILE_SIZE_BYTES)
 
         # ── Transcription via ai_query ──────────────────────────────────────
         # selectExpr allows calling SQL AI functions from Python.
