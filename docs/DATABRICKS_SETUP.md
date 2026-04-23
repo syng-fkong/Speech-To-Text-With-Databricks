@@ -81,16 +81,16 @@ Replace `<service_principal_application_id>` with the UUID from Step 2.1.
 GRANT USE CATALOG, CREATE SCHEMA ON CATALOG speech_to_text
   TO `<service_principal_application_id>`;
 
--- Schema-level (audio): full runtime access for all three pipelines
-GRANT USE SCHEMA, CREATE TABLE, SELECT, MODIFY ON SCHEMA speech_to_text.audio
+-- Schema-level (audio_dev): full runtime access for CI/CD dev pipelines
+GRANT USE SCHEMA, CREATE TABLE, SELECT, MODIFY ON SCHEMA speech_to_text.audio_dev
   TO `<service_principal_application_id>`;
 
 -- Volume: read audio files uploaded to the volume (bronze ingestion)
-GRANT READ VOLUME, WRITE VOLUME ON VOLUME speech_to_text.audio.files
+GRANT READ VOLUME, WRITE VOLUME ON VOLUME speech_to_text.audio_dev.files
   TO `<service_principal_application_id>`;
 
--- Schema-level (prod): parity for when the prod target is deployed
-GRANT USE SCHEMA, CREATE TABLE, SELECT, MODIFY ON SCHEMA speech_to_text.prod
+-- Schema-level (audio_prod): parity for the prod target
+GRANT USE SCHEMA, CREATE TABLE, SELECT, MODIFY ON SCHEMA speech_to_text.audio_prod
   TO `<service_principal_application_id>`;
 ```
 

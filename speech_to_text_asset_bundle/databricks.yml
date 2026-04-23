@@ -54,8 +54,10 @@ targets:
     default: true
     #mode: development # development mode automatically sets pipelines_development to true in presets, but you can also set it manually if you want to use production mode with development settings for pipelines.
 
+    variables:
+      schema: audio_dev  # CI/CD dev schema; local devs override this to audio_<shortname> via databricks.local.yml
+
     presets:
-      # name_prefix: 'd_' # optional prefix added to all resource names, useful for testing to avoid name collisions with prod resources or other developers' resources. Uncomment to activate.
       pipelines_development: true # set development to true for pipelines
       trigger_pause_status: PAUSED # set pause_status to PAUSED for all triggers and schedules
       jobs_max_concurrent_runs: 10 # set max_concurrent runs to 10 for all jobs
@@ -121,6 +123,9 @@ targets:
   prod:
     run_as:
       service_principal_name: ${var.service_principal_id}
+
+    variables:
+      schema: audio_prod
 
     presets:
       pipelines_development: false # set development to false for pipelines

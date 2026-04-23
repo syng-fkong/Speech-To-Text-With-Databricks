@@ -79,8 +79,8 @@ Speech-To-Text-With-Databricks/
 │   ├── tests/                            # Unit and integration tests
 │   └── pyproject.toml                    # Python dependencies and tooling
 ├── .github/workflows/                    # CI/CD automation
-│   ├── sync_git_folder_and_deploy_adb_dev.yml   # Deploy to Dev on push to 'dev'
-│   └── sync_git_folder_and_deploy_adb_prod.yml  # Deploy to Prod on push to 'main'
+│   ├── deploy_adb_dev.yml   # Deploy to Dev on push to 'dev'
+│   └── deploy_adb_prod.yml  # Deploy to Prod on push to 'main'
 ├── docs/                                 # Additional documentation
 └── README.md                             # This file
 ```
@@ -105,8 +105,8 @@ The core Databricks solution. Contains:
 
 GitHub Actions workflows for CI/CD:
 
-- **`sync_git_folder_and_deploy_adb_dev.yml`** — Syncs Git folder and deploys to Dev when code is pushed to `dev` branch
-- **`sync_git_folder_and_deploy_adb_prod.yml`** — Deploys asset bundle to Prod when code is pushed to `main` branch
+- **`deploy_adb_dev.yml`** — Deploys to Dev when code is pushed to `dev` branch
+- **`deploy_adb_prod.yml`** — Deploys to Prod when code is pushed to `main` branch
 
 Both workflows use GitHub OIDC for secure, token-less authentication with Databricks.
 
