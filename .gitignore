@@ -208,3 +208,9 @@ __marimo__/
 
 # Databricks AI Dev Kit — auto-generated resource tracking file (workspace-specific)
 .databricks-resources.json
+
+# MCP server config — contains personal absolute paths and profile names
+.mcp.json
+.mcp.json.bak
+.vscode/mcp.json
+.vscode/mcp.json.bak
