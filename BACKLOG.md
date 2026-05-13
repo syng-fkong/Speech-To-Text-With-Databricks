@@ -18,11 +18,13 @@ Anchored to a **single Lakebase branch + single deployed app + `audio_prod` sche
 
 Six independently-shippable phases:
 
-0. **Provisioning** (one-time, short) — register UC connection + foreign catalog `lakebase_stt` for the production Lakebase database; run `CREATE TABLE nlp_verdicts` migration. No new branches, databases, or apps.
-1. **Disagreements view** — `gold_nlp_disagreements` added to `stt_gold_layer`.
-2. **Lakebase Sync** — single sync resource, prod target only, reads `audio_prod.gold_nlp_disagreements` → Postgres `review_queue`.
-3. **App rewrite** — replace todo with verdict workbench in the existing single deployment. No new bundle variables.
-4. **Federation pipeline** — `stt_human_verdicts` reads `lakebase_stt.public.nlp_verdicts`, writes `audio_prod.gold_nlp_human_verdicts`. Prod target only.
+0. **Provisioning** (one-time, short) — register UC connection + foreign catalog `lakebase_stt` for the production Lakebase database; run `CREATE TABLE nlp_verdicts` migration.
+   - 0.1 UC catalog registration — **DEFERRED**. The `databricks postgres create-catalog` API rejected every JSON body shape probed on 2026-05-13; the correct schema for the request body wasn't discoverable from the CLI help, REST error messages, or generic field-name probing. Will pick up when Phase 4 (federation pipeline) actually needs the catalog and we can get authoritative API docs.
+   - 0.2 Postgres `nlp_verdicts` migration — folded into Phase 3 (the app provisions its own tables at startup via `CREATE TABLE IF NOT EXISTS`, matching the existing todo-routes pattern).
+1. **Disagreements view** — **DONE** (commit pending). `gold_nlp_disagreements` added at [speech_to_text_asset_bundle/src/stt_gold_layer/transformations/gold_nlp_disagreements.py](speech_to_text_asset_bundle/src/stt_gold_layer/transformations/gold_nlp_disagreements.py). Uses entity Jaccard + sentiment/topic categorical mismatch as disagreement triggers. `summary_cosine_similarity` deferred (NULL placeholder column) — would need an embedding lookup.
+2. **Lakebase Sync** — single sync resource, prod target only, reads `audio_prod.gold_nlp_disagreements` → Postgres `review_queue`. **Naming decision pending**: upstream uses `path` (file path) as the natural primary key; should Postgres `review_queue` keep the column name `path` (lossless) or rename to `call_id` (more domain-like)? Decide before writing the sync resource.
+3. **App rewrite** — replace todo with verdict workbench in the existing single deployment. App provisions both `review_queue` and `nlp_verdicts` tables at startup (folded-in Phase 0.2). No new bundle variables.
+4. **Federation pipeline** — `stt_human_verdicts` reads `lakebase_stt.public.nlp_verdicts`, writes `audio_prod.gold_nlp_human_verdicts`. Prod target only. Blocked on Phase 0.1.
 5. **MLflow eval integration** — verdict-based metrics in the existing eval notebook; gracefully skipped in dev runs.
 
 Full schemas, route shapes, wiring rule, open questions, alternatives, and the deferred multi-environment design in [docs/NLP_VERDICT_WORKBENCH_DESIGN.md](docs/NLP_VERDICT_WORKBENCH_DESIGN.md).
