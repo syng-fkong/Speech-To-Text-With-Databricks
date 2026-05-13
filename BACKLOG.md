@@ -14,7 +14,18 @@ Demonstrates Lakehouse ↔ Lakebase end-to-end:
 - **Lakehouse → Lakebase:** new `gold_nlp_disagreements` view → Lakebase Sync → Postgres `review_queue`
 - **Lakebase → Lakehouse:** Postgres `nlp_verdicts` → UC foreign catalog → new `stt_human_verdicts` SDP pipeline → Delta `gold_nlp_human_verdicts` → consumed by `stt_nlp_evaluation` MLflow notebook
 
-Five independently-shippable phases (disagreements view → sync → app rewrite → UC federation → eval extension). Full schemas, route shapes, open questions, and alternatives in the design doc.
+Mirrors the asset bundle's **production / development / dev/&lt;developer&gt;** environment pattern: Lakehouse uses UC schemas (`audio_prod` / `audio_dev` / `audio_<shortname>`), Lakebase uses Postgres branches (`branches/production` / `branches/development` / `branches/dev/<shortname>`), and each developer gets their own deployed app (`stt-appkit-lakebase-<shortname>`) — same shape as `audio_<shortname>` schemas today.
+
+Six independently-shippable phases:
+
+0. **Provisioning** (per-environment, one-time) — Lakebase branches + databases, per-branch UC connection/foreign catalog, Postgres migrations.
+1. **Disagreements view** — `gold_nlp_disagreements` in `stt_gold_layer`.
+2. **Lakebase Sync** — one sync resource per bundle target → that target's branch.
+3. **App rewrite** — replace todo with verdict workbench; parameterize `app_name` / `postgres_branch` / `postgres_database` / `uc_connection_name` so per-developer overrides work via `databricks.local.yml`.
+4. **UC federation + verdicts pipeline** — `stt_human_verdicts` reads `${var.uc_connection_name}.public.nlp_verdicts`.
+5. **MLflow eval integration** — verdict-based metrics in the existing eval notebook.
+
+Full schemas, route shapes, target→branch mapping, open questions, and alternatives in the design doc.
 
 ## CI/CD for `stt-appkit-lakebase` app
 
