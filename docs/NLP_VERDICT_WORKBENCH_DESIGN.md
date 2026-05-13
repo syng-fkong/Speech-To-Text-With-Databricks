@@ -1,6 +1,6 @@
 # NLP Verdict Workbench — Design
 
-**Status:** Proposed, deferred. See [BACKLOG.md](../BACKLOG.md).
+**Status:** ✅ Implemented end-to-end (2026-05-14). For the as-built operational reference (working API bodies, gotchas, troubleshooting) see [LAKEHOUSE_LAKEBASE_INTEGRATION.md](LAKEHOUSE_LAKEBASE_INTEGRATION.md). This document remains as the design rationale and the record of what was considered and rejected; it doesn't need to be re-read to operate the system.
 **Drafted:** 2026-05-13.
 **Owners:** TBD.
 

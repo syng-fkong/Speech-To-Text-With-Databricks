@@ -78,10 +78,18 @@ Speech-To-Text-With-Databricks/
 │   │   └── stt_nlp_evaluation/           # MLflow quality evaluation notebook
 │   ├── tests/                            # Unit and integration tests
 │   └── pyproject.toml                    # Python dependencies and tooling
+├── stt-appkit-lakebase/                  # NLP Verdict Workbench app (AppKit + Lakebase Postgres)
+│   ├── databricks.yml                    # Bundle config for the deployed Databricks App
+│   ├── server/routes/lakebase/           # Verdict workbench API routes (Express + Postgres)
+│   └── client/src/pages/lakebase/        # Queue + diff/verdict UI (React)
 ├── .github/workflows/                    # CI/CD automation
 │   ├── deploy_adb_dev.yml   # Deploy to Dev on push to 'dev'
 │   └── deploy_adb_prod.yml  # Deploy to Prod on push to 'main'
 ├── docs/                                 # Additional documentation
+│   ├── LAKEHOUSE_LAKEBASE_INTEGRATION.md # Operational reference for the NLP Verdict Workbench
+│   ├── NLP_VERDICT_WORKBENCH_DESIGN.md   # Design rationale for the verdict workbench
+│   └── ...
+├── BACKLOG.md                            # Deferred work + per-phase implementation tracking
 └── README.md                             # This file
 ```
 
@@ -100,6 +108,14 @@ The core Databricks solution. Contains:
 - **`tests/`** — Unit tests for transformations
 
 **For detailed documentation**, see [speech_to_text_asset_bundle/README.md](speech_to_text_asset_bundle/README.md)
+
+### `/stt-appkit-lakebase`
+
+The NLP Verdict Workbench — a Databricks App backed by Lakebase Postgres. Reviewers see calls where the two silver NLP implementations disagreed, pick a winner per dimension, and the verdicts flow back to a Delta table the MLflow evaluation reads as ground truth. End-to-end Lakehouse ↔ Lakebase integration.
+
+**Operational reference**: [docs/LAKEHOUSE_LAKEBASE_INTEGRATION.md](docs/LAKEHOUSE_LAKEBASE_INTEGRATION.md) — as-built architecture, working API bodies for catalog + sync registration, GRANT recipe, troubleshooting.
+**Design rationale**: [docs/NLP_VERDICT_WORKBENCH_DESIGN.md](docs/NLP_VERDICT_WORKBENCH_DESIGN.md) — why this exists, alternatives considered.
+**App-specific README**: [stt-appkit-lakebase/README.md](stt-appkit-lakebase/README.md) — local dev and deployment.
 
 ### `/.github/workflows`
 
