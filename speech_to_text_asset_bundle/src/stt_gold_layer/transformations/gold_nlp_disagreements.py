@@ -19,22 +19,47 @@ schema  = spark.conf.get("schema")
 ENTITY_JACCARD_THRESHOLD = 0.5  # Below this, the two entity sets are flagged as disagreeing.
 
 
-def _entity_token_array_expr(entities_col: str) -> str:
-    """Build a SQL expression that flattens an entities STRUCT into a deduped array
-    of tagged tokens (e.g. 'person:Alice', 'org:Acme'). Lets us treat all five
-    entity types as one set for Jaccard comparison instead of five separate sets.
+# The two silver NLP tables store `entities` with subtly different schemas — the
+# code intent (per silver_audio_nlp_ai_query.py and the ai_extract docs) is for
+# both to be STRUCT<...: ARRAY<STRING>>, but ai_extract() actually returns the
+# array fields as JSON-encoded STRINGs (e.g. '["Alice","Bob"]'). The intermediate
+# representation we use for Jaccard comparison is a flat ARRAY<STRING> of tagged
+# tokens ('person:Alice', 'org:Acme', ...), so we have two helpers that produce
+# the same shape from the two different source shapes.
+#
+# TODO (upstream): normalise ai_extract output to true ARRAY<STRING> in
+# silver_audio_nlp_ai_func so this divergence isn't necessary downstream.
 
-    entities = STRUCT<person, organization, location, date, amount>, each ARRAY<STRING>.
-    """
-    return (
-        "array_distinct(flatten(array("
-        f"  transform(coalesce({entities_col}.person,       array()), x -> concat('person:', x)),"
-        f"  transform(coalesce({entities_col}.organization, array()), x -> concat('org:',    x)),"
-        f"  transform(coalesce({entities_col}.location,     array()), x -> concat('loc:',    x)),"
-        f"  transform(coalesce({entities_col}.date,         array()), x -> concat('date:',   x)),"
-        f"  transform(coalesce({entities_col}.amount,       array()), x -> concat('amt:',    x))"
-        ")))"
+_ENTITY_LABELS = [
+    ("person",       "person:"),
+    ("organization", "org:"),
+    ("location",     "loc:"),
+    ("date",         "date:"),
+    ("amount",       "amt:"),
+]
+
+
+def _tagged_tokens_from_array_struct(struct_col: str) -> str:
+    """For entities where each STRUCT field is already ARRAY<STRING>
+    (silver_audio_nlp_ai_query)."""
+    parts = ",".join(
+        f"transform(coalesce({struct_col}.{field}, cast(array() as array<string>)),"
+        f" x -> concat('{tag}', x))"
+        for field, tag in _ENTITY_LABELS
     )
+    return f"array_distinct(flatten(array({parts})))"
+
+
+def _tagged_tokens_from_json_string_struct(struct_col: str) -> str:
+    """For entities where each STRUCT field is a STRING holding a JSON-encoded
+    array (silver_audio_nlp_ai_func — ai_extract output). NULL fields coalesce
+    to '[]' so from_json yields an empty array."""
+    parts = ",".join(
+        f"transform(from_json(coalesce({struct_col}.{field}, '[]'), 'array<string>'),"
+        f" x -> concat('{tag}', x))"
+        for field, tag in _ENTITY_LABELS
+    )
+    return f"array_distinct(flatten(array({parts})))"
 
 
 @dp.table(
@@ -100,10 +125,12 @@ def gold_nlp_disagreements():
     joined = ai_query.join(ai_func, on="path", how="inner").join(txn, on="path", how="inner")
 
     # Entity Jaccard. Empty-on-both → 1.0 (perfect agreement on "no entities").
+    # Each side uses a source-specific helper because of the upstream schema
+    # divergence documented above the helpers.
     with_jaccard = (
         joined
-        .withColumn("_ent_q", expr(_entity_token_array_expr("entities_ai_query")))
-        .withColumn("_ent_f", expr(_entity_token_array_expr("entities_ai_func")))
+        .withColumn("_ent_q", expr(_tagged_tokens_from_array_struct("entities_ai_query")))
+        .withColumn("_ent_f", expr(_tagged_tokens_from_json_string_struct("entities_ai_func")))
         .withColumn(
             "entity_jaccard_similarity",
             when(
@@ -119,16 +146,17 @@ def gold_nlp_disagreements():
         .withColumn("summary_cosine_similarity", lit(None).cast("float"))
     )
 
-    # array_remove(array(...), NULL) is the idiom to build a non-null array from
-    # conditionally-NULL elements, so disagreement_flags ends up tight.
+    # Build disagreement_flags as a sparse array of conditionally-NULL elements,
+    # then filter out the NULLs. (array_remove(arr, NULL) doesn't work — Spark
+    # returns NULL for the whole array when the search value is NULL.)
     with_flags = with_jaccard.withColumn(
         "disagreement_flags",
         expr(
-            "array_remove(array("
-            "  CASE WHEN sentiment_ai_query != sentiment_ai_func THEN 'sentiment' ELSE NULL END,"
-            "  CASE WHEN topic_ai_query     != topic_ai_func     THEN 'topic'     ELSE NULL END,"
-            f"  CASE WHEN entity_jaccard_similarity < {ENTITY_JACCARD_THRESHOLD} THEN 'entities' ELSE NULL END"
-            "), NULL)"
+            "filter(array("
+            "  CASE WHEN sentiment_ai_query != sentiment_ai_func THEN 'sentiment' END,"
+            "  CASE WHEN topic_ai_query     != topic_ai_func     THEN 'topic'     END,"
+            f"  CASE WHEN entity_jaccard_similarity < {ENTITY_JACCARD_THRESHOLD} THEN 'entities' END"
+            "), x -> x IS NOT NULL)"
         ),
     )
 
