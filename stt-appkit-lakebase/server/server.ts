@@ -1,5 +1,5 @@
 import { createApp, lakebase, server } from '@databricks/appkit';
-import { setupSampleLakebaseRoutes } from './routes/lakebase/todo-routes';
+import { setupVerdictRoutes } from './routes/lakebase/verdict-routes';
 
 createApp({
   plugins: [
@@ -8,7 +8,7 @@ createApp({
   ],
 })
   .then(async (appkit) => {
-    await setupSampleLakebaseRoutes(appkit);
+    await setupVerdictRoutes(appkit);
     await appkit.server.start();
   })
   .catch(console.error);

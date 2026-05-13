@@ -1,172 +1,131 @@
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router';
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   Button,
-  Input,
   Skeleton,
+  Badge,
 } from '@databricks/appkit-ui/react';
-import { useState, useEffect } from 'react';
-import { Check, X } from 'lucide-react';
 
-interface Todo {
-  id: number;
-  title: string;
-  completed: boolean;
-  created_at: string;
+interface QueueRow {
+  path: string;
+  ingested_at: string | null;
+  disagreement_flags: string[];
+  status: string;
+  claimed_by: string | null;
+}
+
+function basename(path: string): string {
+  const cleaned = path.replace(/\/+$/, '');
+  const i = cleaned.lastIndexOf('/');
+  return i === -1 ? cleaned : cleaned.slice(i + 1);
 }
 
 export function LakebasePage() {
-  const [todos, setTodos] = useState<Todo[]>([]);
-  const [newTitle, setNewTitle] = useState('');
+  const [rows, setRows] = useState<QueueRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [filter, setFilter] = useState<string>('all');
 
   useEffect(() => {
-    fetch('/api/lakebase/todos')
+    const url = filter === 'all' ? '/api/review-queue' : `/api/review-queue?dimension=${filter}`;
+    setLoading(true);
+    fetch(url)
       .then((res) => {
-        if (!res.ok) throw new Error(`Failed to fetch todos: ${res.statusText}`);
-        return res.json() as Promise<Todo[]>;
+        if (!res.ok) throw new Error(`Failed to fetch queue: ${res.statusText}`);
+        return res.json() as Promise<QueueRow[]>;
       })
-      .then(setTodos)
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load todos'))
+      .then((data) => {
+        setRows(data);
+        setError(null);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load queue'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [filter]);
 
-  const addTodo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const title = newTitle.trim();
-    if (!title) return;
-
-    setSubmitting(true);
-    try {
-      const res = await fetch('/api/lakebase/todos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title }),
-      });
-      if (!res.ok) throw new Error(`Failed to create todo: ${res.statusText}`);
-      const created = (await res.json()) as Todo;
-      setTodos((prev) => [created, ...prev]);
-      setNewTitle('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add todo');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const toggleTodo = async (id: number) => {
-    try {
-      const res = await fetch(`/api/lakebase/todos/${id}`, { method: 'PATCH' });
-      if (!res.ok) throw new Error(`Failed to update todo: ${res.statusText}`);
-      const updated = (await res.json()) as Todo;
-      setTodos((prev) => prev.map((t) => (t.id === id ? updated : t)));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update todo');
-    }
-  };
-
-  const deleteTodo = async (id: number) => {
-    try {
-      const res = await fetch(`/api/lakebase/todos/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(`Failed to delete todo: ${res.statusText}`);
-      setTodos((prev) => prev.filter((t) => t.id !== id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete todo');
-    }
-  };
-
-  const completedCount = todos.filter((t) => t.completed).length;
+  const dimensions = ['all', 'sentiment', 'topic', 'summary', 'entities'];
 
   return (
-    <div className="space-y-6 w-full max-w-2xl mx-auto">
+    <div className="space-y-6 w-full max-w-5xl mx-auto">
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle>Todo List</CardTitle>
+          <CardTitle>NLP Verdict Workbench — Review Queue</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground mb-4">
-            A simple CRUD example powered by Databricks Lakebase (PostgreSQL).
+            Calls where the two NLP implementations disagree. Click a row to review and submit a verdict.
           </p>
 
-          <form onSubmit={addTodo} className="flex gap-2 mb-6">
-            <Input
-              placeholder="What needs to be done?"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              disabled={submitting}
-              className="flex-1"
-            />
-            <Button type="submit" disabled={submitting || !newTitle.trim()}>
-              {submitting ? 'Adding...' : 'Add'}
-            </Button>
-          </form>
+          <div className="flex gap-2 mb-4 flex-wrap">
+            {dimensions.map((d) => (
+              <Button
+                key={d}
+                size="sm"
+                variant={filter === d ? 'default' : 'outline'}
+                onClick={() => setFilter(d)}
+              >
+                {d === 'all' ? 'All disagreements' : d}
+              </Button>
+            ))}
+          </div>
 
           {error && (
-            <div className="text-destructive bg-destructive/10 p-3 rounded-md mb-4">
+            <div className="text-destructive bg-destructive/10 p-3 rounded-md mb-4 text-sm">
               {error}
             </div>
           )}
 
           {loading && (
-            <div className="space-y-3">
-              {Array.from({ length: 3 }, (_, i) => (
-                <div key={`skeleton-${i}`} className="flex items-center gap-3">
-                  <Skeleton className="h-5 w-5 rounded" />
-                  <Skeleton className="h-4 flex-1" />
-                </div>
+            <div className="space-y-2">
+              {Array.from({ length: 4 }, (_, i) => (
+                <Skeleton key={`s-${i}`} className="h-12 w-full" />
               ))}
             </div>
           )}
 
-          {!loading && todos.length === 0 && (
+          {!loading && rows.length === 0 && (
             <p className="text-muted-foreground text-center py-8">
-              No todos yet. Add one above to get started.
+              {filter === 'all'
+                ? 'No items pending review. The gold_nlp_disagreements view may be empty or the Lakebase Sync has not run yet.'
+                : `No pending items with a ${filter} disagreement.`}
             </p>
           )}
 
-          {!loading && todos.length > 0 && (
-            <div className="space-y-2">
-              {todos.map((todo) => (
-                <div
-                  key={todo.id}
-                  className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors"
+          {!loading && rows.length > 0 && (
+            <div className="border rounded-md divide-y">
+              {rows.map((row) => (
+                <Link
+                  key={row.path}
+                  to={`/lakebase/review/${encodeURIComponent(row.path)}`}
+                  className="block px-4 py-3 hover:bg-muted/50 transition-colors"
                 >
-                  <button
-                    type="button"
-                    onClick={() => toggleTodo(todo.id)}
-                    className={`h-5 w-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${
-                      todo.completed
-                        ? 'bg-primary border-primary text-primary-foreground'
-                        : 'border-muted-foreground/30 hover:border-primary'
-                    }`}
-                    aria-label={todo.completed ? 'Mark as incomplete' : 'Mark as complete'}
-                  >
-                    {todo.completed && <Check className="h-3 w-3" />}
-                  </button>
-
-                  <span className={`flex-1 ${todo.completed ? 'line-through text-muted-foreground' : ''}`}>
-                    {todo.title}
-                  </span>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => deleteTodo(todo.id)}
-                    className="text-muted-foreground hover:text-destructive shrink-0"
-                    aria-label="Delete todo"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium truncate" title={row.path}>
+                        {basename(row.path)}
+                      </div>
+                      <div className="text-xs text-muted-foreground truncate" title={row.path}>
+                        {row.path}
+                      </div>
+                    </div>
+                    <div className="flex gap-1 flex-wrap">
+                      {row.disagreement_flags.map((f) => (
+                        <Badge key={f} variant="secondary">
+                          {f}
+                        </Badge>
+                      ))}
+                    </div>
+                    <div className="text-xs text-muted-foreground whitespace-nowrap">
+                      {row.ingested_at
+                        ? new Date(row.ingested_at).toLocaleString()
+                        : '—'}
+                    </div>
+                  </div>
+                </Link>
               ))}
-
-              <p className="text-xs text-muted-foreground pt-2">
-                {completedCount} of {todos.length} completed
-              </p>
             </div>
           )}
         </CardContent>

@@ -6,6 +6,7 @@ import {
   CardTitle,
 } from '@databricks/appkit-ui/react';
 import { LakebasePage } from './pages/lakebase/LakebasePage';
+import { ReviewDetailPage } from './pages/lakebase/ReviewDetailPage';
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
   `px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
@@ -42,6 +43,7 @@ const router = createBrowserRouter([
     children: [
       { path: '/', element: <HomePage /> },
       { path: '/lakebase', element: <LakebasePage /> },
+      { path: '/lakebase/review/:encodedPath', element: <ReviewDetailPage /> },
     ],
   },
 ]);
