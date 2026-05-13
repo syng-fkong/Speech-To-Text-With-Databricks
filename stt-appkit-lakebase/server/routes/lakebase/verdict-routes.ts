@@ -10,44 +10,16 @@ interface AppKitWithLakebase {
   };
 }
 
-// review_queue is materialised by the Lakebase Sync resource (Phase 2). The app
-// pre-creates it idempotently so manual seed inserts work before the sync exists.
-// nlp_verdicts is owned by the app — verdicts are written here and later read by
-// the federation pipeline.
-const CREATE_REVIEW_QUEUE_SQL = `
-  CREATE TABLE IF NOT EXISTS app.review_queue (
-    path                       TEXT PRIMARY KEY,
-    transcription_text         TEXT NOT NULL,
-    sentiment_ai_query         TEXT,
-    sentiment_ai_func          TEXT,
-    summary_ai_query           TEXT,
-    summary_ai_func            TEXT,
-    topic_ai_query             TEXT,
-    topic_ai_func              TEXT,
-    entities_ai_query          JSONB,
-    entities_ai_func           JSONB,
-    entity_jaccard_similarity  REAL,
-    summary_cosine_similarity  REAL,
-    disagreement_flags         TEXT[] NOT NULL,
-    ingested_date              DATE,
-    ingested_at                TIMESTAMPTZ,
-    synced_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
-    status                     TEXT NOT NULL DEFAULT 'pending'
-                               CHECK (status IN ('pending','claimed','reviewed','skipped')),
-    claimed_by                 TEXT,
-    claimed_at                 TIMESTAMPTZ
-  )
-`;
-
-const CREATE_REVIEW_QUEUE_INDEX_SQL = `
-  CREATE INDEX IF NOT EXISTS review_queue_status_idx
-    ON app.review_queue (status, ingested_at)
-`;
-
+// review_queue is OWNED by the Lakebase Sync resource (Phase 2) — the sync's
+// pipeline creates and writes to it. The app must NOT pre-create it, otherwise
+// the sync refuses to take ownership (DESTINATION_TABLE_EXISTS).
+// nlp_verdicts is OWNED by the app.
+// The FK from nlp_verdicts.path → review_queue.path is added in a separate
+// ALTER step so app startup doesn't fail when sync hasn't run yet.
 const CREATE_NLP_VERDICTS_SQL = `
   CREATE TABLE IF NOT EXISTS app.nlp_verdicts (
     verdict_id      BIGSERIAL PRIMARY KEY,
-    path            TEXT NOT NULL REFERENCES app.review_queue(path) ON DELETE CASCADE,
+    path            TEXT NOT NULL,
     dimension       TEXT NOT NULL CHECK (dimension IN ('sentiment','topic','summary','entities')),
     winner          TEXT NOT NULL CHECK (winner IN ('ai_query','ai_func','neither','both_acceptable')),
     truth_value     TEXT,
@@ -55,6 +27,20 @@ const CREATE_NLP_VERDICTS_SQL = `
     reviewer_email  TEXT NOT NULL,
     reviewed_at     TIMESTAMPTZ NOT NULL DEFAULT now()
   )
+`;
+
+// Idempotent FK addition. Wrapped in DO block so it succeeds when the constraint
+// already exists OR when review_queue doesn't yet exist (sync hasn't run).
+const ADD_NLP_VERDICTS_FK_SQL = `
+  DO $$ BEGIN
+    ALTER TABLE app.nlp_verdicts
+      ADD CONSTRAINT nlp_verdicts_path_fk
+      FOREIGN KEY (path) REFERENCES app.review_queue(path) ON DELETE CASCADE;
+  EXCEPTION
+    WHEN duplicate_object THEN NULL;
+    WHEN undefined_table THEN NULL;
+    WHEN insufficient_privilege THEN NULL;
+  END $$
 `;
 
 const CREATE_NLP_VERDICTS_PATH_INDEX_SQL = `
@@ -97,12 +83,13 @@ const CREATE_SCHEMA_SQL = `CREATE SCHEMA IF NOT EXISTS app`;
 export async function setupVerdictRoutes(appkit: AppKitWithLakebase) {
   try {
     await appkit.lakebase.query(CREATE_SCHEMA_SQL);
-    await appkit.lakebase.query(CREATE_REVIEW_QUEUE_SQL);
-    await appkit.lakebase.query(CREATE_REVIEW_QUEUE_INDEX_SQL);
     await appkit.lakebase.query(CREATE_NLP_VERDICTS_SQL);
     await appkit.lakebase.query(CREATE_NLP_VERDICTS_PATH_INDEX_SQL);
     await appkit.lakebase.query(CREATE_NLP_VERDICTS_REVIEWED_AT_INDEX_SQL);
-    console.log('[lakebase] verdict workbench schema ensured');
+    // FK to review_queue is conditional — review_queue is sync-owned and may
+    // not exist yet on a cold deploy. The DO block swallows undefined_table.
+    await appkit.lakebase.query(ADD_NLP_VERDICTS_FK_SQL);
+    console.log('[lakebase] verdict workbench schema ensured (nlp_verdicts; review_queue is sync-owned)');
   } catch (err) {
     console.warn('[lakebase] schema provisioning failed:', (err as Error).message);
     console.warn('[lakebase] routes will be registered but may return errors');
@@ -123,10 +110,10 @@ export async function setupVerdictRoutes(appkit: AppKitWithLakebase) {
         }
 
         const { rows } = await appkit.lakebase.query(
-          `SELECT path, ingested_at, disagreement_flags, status, claimed_by
+          `SELECT path, _ingested_at, disagreement_flags, status, claimed_by
              FROM app.review_queue
             WHERE status = 'pending' ${dimClause}
-            ORDER BY ingested_at DESC NULLS LAST
+            ORDER BY _ingested_at DESC NULLS LAST
             LIMIT $1`,
           params,
         );

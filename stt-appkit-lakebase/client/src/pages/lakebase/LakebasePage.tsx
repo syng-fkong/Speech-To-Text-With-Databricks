@@ -12,7 +12,7 @@ import {
 
 interface QueueRow {
   path: string;
-  ingested_at: string | null;
+  _ingested_at: string | null;
   disagreement_flags: string[];
   status: string;
   claimed_by: string | null;
@@ -119,8 +119,8 @@ export function LakebasePage() {
                       ))}
                     </div>
                     <div className="text-xs text-muted-foreground whitespace-nowrap">
-                      {row.ingested_at
-                        ? new Date(row.ingested_at).toLocaleString()
+                      {row._ingested_at
+                        ? new Date(row._ingested_at).toLocaleString()
                         : '—'}
                     </div>
                   </div>
