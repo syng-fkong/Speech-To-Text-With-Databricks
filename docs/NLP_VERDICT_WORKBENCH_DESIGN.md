@@ -43,45 +43,37 @@ The app today is the AppKit-Lakebase todo CRUD template — unrelated to the ana
 
 ## Environment strategy
 
-This project follows the asset bundle's existing **production / development / dev/&lt;developer&gt;** pattern, extended across both data stores. The Lakehouse uses Unity Catalog schemas (`audio_prod` / `audio_dev` / `audio_<shortname>`, already established). The Lakebase uses **Postgres branches** — Databricks's recommended isolation primitive, equivalent to git branches but for data (copy-on-write, cheap to create).
+**The verdict subsystem is anchored to a single Lakebase + single Lakehouse schema (`audio_prod`).** The asset bundle's existing multi-schema pattern (`audio_prod` / `audio_dev` / `audio_<shortname>`) applies to the transcription and NLP pipelines unchanged — only the verdict subsystem is single-instance.
 
-| Bundle target | Lakehouse schema | Lakebase branch | Deployed app name |
-|---|---|---|---|
-| `prod` (CI on `main`) | `audio_prod` | `projects/speech-to-text/branches/production` | `stt-appkit-lakebase-prod` |
-| `dev` (CI on `dev`) | `audio_dev` | `projects/speech-to-text/branches/development` | `stt-appkit-lakebase-dev` |
-| `dev` (local override) | `audio_<shortname>` | `projects/speech-to-text/branches/dev/<shortname>` | `stt-appkit-lakebase-<shortname>` |
+**Rationale.** Lakebase scale-to-zero is per branch (per compute endpoint), so per-developer branches *could* be cheap when idle. But the operational complexity — per-developer UC connections, per-environment federation catalogs, schema-aware verdict routing, per-developer deployed apps — isn't justified for current team size (one developer). The simpler single-instance design ships faster and can be upgraded later without losing the analytical payoff. The full multi-environment design is preserved in git history at commit `bf81348` and remains the upgrade path.
 
-CI targets are fixed; per-developer overrides come via a gitignored `databricks.local.yml` that sets local values for the bundle variables. Identical to how the asset bundle handles `audio_<shortname>` today.
+### Resources (all single-instance)
 
-**Bundle variables** ([`stt-appkit-lakebase/databricks.yml`](../stt-appkit-lakebase/databricks.yml) gains these):
+| Component | Identifier |
+|---|---|
+| Lakebase branch | `projects/speech-to-text/branches/production` (existing) |
+| Lakebase database | `db-idxm-pfkiwu5v4q` (existing, already bound to the deployed app) |
+| Deployed app | `stt-appkit-lakebase` (existing) |
+| UC connection + foreign catalog | `lakebase_stt` (new, Phase 0) |
+| Lakehouse schema (both directions) | `audio_prod` |
 
-- `app_name` — the deployed app name (drives `resources.apps.app.name`)
-- `postgres_branch` — full Lakebase branch resource name
-- `postgres_database` — full Lakebase database resource name in that branch
-- `uc_connection_name` — Unity Catalog foreign-catalog connection name for that branch (see § 5)
+### The wiring rule
 
-**Schema names in Postgres are identical across branches** — `review_queue` and `nlp_verdicts` exist in `public` of every branch. The branch IS the isolation boundary; no `_<env>` suffixes needed.
+Both directions are anchored to `audio_prod`:
 
-**Local-dev model.** A developer who wants to work on the app:
+- **Lakebase Sync** reads from `audio_prod.gold_nlp_disagreements` only. Dev / per-developer schemas do not feed Lakebase. (Otherwise dev syncs would conflict with prod's data in the single `review_queue` table.)
+- **Federation pipeline** writes to `audio_prod.gold_nlp_human_verdicts` only.
+- The Lakebase Sync resource and the federation pipeline both deploy **only in the `prod` bundle target**, not in `dev` or per-developer.
 
-1. Creates a `dev/<shortname>` branch off `development` (one-time, see Phase 0).
-2. Registers a per-branch UC connection (one-time, see Phase 0).
-3. Sets bundle variables in `databricks.local.yml` (gitignored):
+### Consequence for dev work
 
-   ```yaml
-   targets:
-     dev:
-       variables:
-         app_name: stt-appkit-lakebase-fkong
-         postgres_branch: projects/speech-to-text/branches/dev/fkong
-         postgres_database: <branch's database UUID>
-         uc_connection_name: lakebase_stt_fkong
-   ```
+The MLflow eval extension's human-verdict metrics only exist for `audio_prod` data. Dev and per-developer MLflow runs cannot compute verdict-based metrics natively. Developers test the verdict subsystem one of three ways:
 
-4. Deploys their own app: `databricks bundle deploy && databricks bundle run app`.
-5. Optionally also runs `npm run dev` locally for fast UI iteration, pointing at the same branch via `.env`.
+1. Read `audio_prod.gold_nlp_human_verdicts` read-only as fixed test data.
+2. Manually insert test rows into Lakebase via `psql`/the app for development iteration.
+3. Accept that this subsystem is end-to-end-testable only in prod and rely on unit tests for component changes.
 
-Same shape as the asset-bundle developer experience: one set of bundle variables, gitignored override file, full per-developer isolation across both data stores AND the deployed app.
+This is the deliberate trade-off of the single-instance choice.
 
 ## Proposed architecture
 
@@ -91,13 +83,14 @@ Same shape as the asset-bundle developer experience: one set of bundle variables
 
    silver_audio_nlp_ai_query ─┐
                               │
-   silver_audio_nlp_ai_func   ├─► gold_nlp_disagreements
+   silver_audio_nlp_ai_func   ├─► audio_prod.gold_nlp_disagreements
                               │   (view of disagreeing rows
    silver_audio_transcription ┘    + both NLP outputs)
                                             │
                                             │   Lakebase Sync
                                             │   (scheduled snapshot
-                                            ▼    per pipeline run)
+                                            ▼    per pipeline run,
+                                                 prod target only)
                                                                  ┌──────────────────────┐
                                                                  │ review_queue         │
                                                                  │  (call_id, status,   │
@@ -109,23 +102,24 @@ Same shape as the asset-bundle developer experience: one set of bundle variables
                                                                  │   winner, truth,     │
                                                                  │   reviewer_email)    │
                                                                  └──────────┬───────────┘
-   gold_nlp_human_verdicts                                                  │
-       ◄────── reads via UC Federation ◄─── lakebase catalog ────────◄──────┘
-       (Delta, materialized by                  (Postgres exposed
-        stt_human_verdicts pipeline)             as UC foreign catalog)
+   audio_prod.gold_nlp_human_verdicts                                       │
+       ◄────── reads via UC Federation ◄─── lakebase_stt catalog ────◄──────┘
+       (Delta, materialized by                  (single foreign catalog
+        stt_human_verdicts pipeline,             pointing at the prod
+        prod target only)                        Lakebase branch)
                               │
                               ▼
    stt_nlp_evaluation (MLflow)
        — now computes precision/recall
          per implementation against
-         human verdicts
+         human verdicts (prod only)
 ```
 
 ## Detailed design
 
 ### 1. Lakehouse: `gold_nlp_disagreements` view
 
-A new view in the gold layer (added to [`speech_to_text_asset_bundle/src/stt_gold_layer/`](../speech_to_text_asset_bundle/src/stt_gold_layer/)) that joins both silver NLP tables and selects rows where they disagree on any dimension.
+A new view in the gold layer (added to [`speech_to_text_asset_bundle/src/stt_gold_layer/`](../speech_to_text_asset_bundle/src/stt_gold_layer/)) that joins both silver NLP tables and selects rows where they disagree on any dimension. The view is defined for `${var.schema}`, so it materializes in every target's schema — but only the `audio_prod` materialization is consumed downstream by the verdict workflow.
 
 Trigger conditions (call rows that surface for review):
 
@@ -144,26 +138,26 @@ Output columns:
 | `summary_ai_query`, `summary_ai_func` | string | both silver tables |
 | `sentiment_ai_query`, `sentiment_ai_func` | string | both silver tables |
 | `topic_ai_query`, `topic_ai_func` | string | both silver tables |
-| `entities_ai_query`, `entities_ai_func` | array<struct> | both silver tables |
+| `entities_ai_query`, `entities_ai_func` | array of struct | both silver tables |
 | `summary_cosine_similarity` | float | computed in view |
 | `entity_jaccard_similarity` | float | computed in view |
-| `disagreement_flags` | array<string> | which dimensions disagreed |
+| `disagreement_flags` | array of string | which dimensions disagreed |
 
 The view is recomputed each gold-layer pipeline run.
 
 ### 2. Lakehouse → Lakebase sync
 
-Use **Lakebase Sync** (Databricks managed Delta-to-Postgres sync) to materialize `gold_nlp_disagreements` into a Postgres table `review_queue`.
+Use **Lakebase Sync** (Databricks managed Delta-to-Postgres sync) to materialize `audio_prod.gold_nlp_disagreements` into a Postgres table `review_queue`.
 
 - Sync mode: **scheduled snapshot** per gold-layer pipeline run (the upstream pipeline is batch; a continuous sync isn't justified).
 - Sync upserts on `call_id`. Rows whose status is `pending` are refreshed if the Lakehouse view changes; rows already `claimed` or `reviewed` are not overwritten (handled via Lakebase Sync's row-level filter or via a `BEFORE UPDATE` trigger).
-- **One sync resource per bundle target.** Each target's sync writes into that target's Postgres branch, driven by `${var.postgres_branch}` and `${var.postgres_database}` — CI dev syncs into `branches/development`, CI prod into `branches/production`, and a developer's `dev/<shortname>` sync into their own branch. The Delta source table differs by target too (`audio_dev.gold_nlp_disagreements` vs `audio_prod.gold_nlp_disagreements` vs `audio_<shortname>.gold_nlp_disagreements`), so each environment is fully self-contained.
+- **Deployed only in the `prod` bundle target.** Source is hard-coded to `audio_prod.gold_nlp_disagreements`. Dev and per-developer bundle deploys skip this resource.
 - Configure via a new bundle resource in [`speech_to_text_asset_bundle/resources/`](../speech_to_text_asset_bundle/resources/), e.g., `stt_review_queue_sync.lakebase_sync.yml`.
 
 ### 3. Lakebase schemas (Postgres)
 
 ```sql
--- Synced from gold_nlp_disagreements; app reads to populate the queue.
+-- Synced from audio_prod.gold_nlp_disagreements; app reads to populate the queue.
 CREATE TABLE review_queue (
   call_id                    TEXT PRIMARY KEY,
   transcript                 TEXT NOT NULL,
@@ -208,7 +202,7 @@ Notes:
 
 - `nlp_verdicts` is append-only — revising a verdict creates a new row; the eval pipeline picks the latest `(call_id, dimension)` pair.
 - `review_queue.status` lifecycle: `pending → claimed → reviewed` (or `→ skipped`). Auto-release stale claims after 30 minutes via a Postgres scheduled job or app-side cron.
-- **Schemas are identical across branches.** The DDL above runs once per branch as a one-shot migration; the branch IS the isolation boundary. Lakebase Sync creates/manages `review_queue` automatically, so only `nlp_verdicts` strictly requires the manual migration. Provisioning of branches and migrations is Phase 0 (see § Implementation phases).
+- DDL runs once against the production branch as part of Phase 0. Lakebase Sync auto-creates `review_queue` on first run; `nlp_verdicts` is the only strictly-required manual migration.
 
 ### 4. App: replace todo CRUD with verdict workbench
 
@@ -233,51 +227,44 @@ Reviewer identity comes from Databricks Apps' on-behalf-of-user headers (already
 - **Detail / diff page**: transcript on top; below it, one card per disagreement dimension showing the two outputs side by side with a "Winner" radio (`AI SQL` / `FM API` / `Neither — provide truth` / `Both acceptable`), an optional notes field, and a submit-all button.
 - **My reviews** page: history of submitted verdicts (queries `/api/verdicts/me`).
 
+The bundle config in [`databricks.yml`](../stt-appkit-lakebase/databricks.yml) is unchanged — single app, fixed Postgres binding, no new variables. The app always talks to the production Lakebase branch.
+
 ### 5. Lakebase → Lakehouse: federation + verdicts pipeline
 
-**Per-branch UC foreign catalogs.** Because each environment has its own Postgres branch, each gets its own Unity Catalog connection and foreign catalog. The bundle variable `${var.uc_connection_name}` selects which one the pipeline reads from in a given deploy.
-
-| Branch | UC connection + foreign catalog name |
-|---|---|
-| `branches/production` | `lakebase_stt_prod` |
-| `branches/development` | `lakebase_stt_dev` |
-| `branches/dev/<shortname>` | `lakebase_stt_<shortname>` |
-
-One-time SQL per environment (run as part of Phase 0; documented in [`docs/DATABRICKS_SETUP.md`](DATABRICKS_SETUP.md)):
+**One UC foreign catalog: `lakebase_stt`** registered during Phase 0, pointing at the production Lakebase database.
 
 ```sql
-CREATE CONNECTION ${var.uc_connection_name}
+CREATE CONNECTION lakebase_stt
   TYPE POSTGRESQL
-  OPTIONS (host '<lakebase-host>', port '5432', database '<db-uuid>', ...);
+  OPTIONS (host '<lakebase-host>', port '5432', database 'db-idxm-pfkiwu5v4q', ...);
 
-CREATE FOREIGN CATALOG ${var.uc_connection_name}
-  USING CONNECTION ${var.uc_connection_name};
+CREATE FOREIGN CATALOG lakebase_stt USING CONNECTION lakebase_stt;
 ```
 
-This exposes `${var.uc_connection_name}.public.nlp_verdicts` as a readable Spark table.
+This exposes `lakebase_stt.public.nlp_verdicts` as a readable Spark table.
 
 **New pipeline `stt_human_verdicts`** in [`speech_to_text_asset_bundle/`](../speech_to_text_asset_bundle/):
 
 - Resource file: `resources/stt_human_verdicts.pipeline.yml`
 - Source: `src/stt_human_verdicts/` (Python SDP)
-- Reads `${var.uc_connection_name}.public.nlp_verdicts` (federated) and `${var.schema}.gold_call_detail` (Delta) on `call_id`. Both source paths are target-scoped, so a `dev` deploy reads its own branch's verdicts joined to its own gold layer.
+- Reads `lakebase_stt.public.nlp_verdicts` (federated) and `audio_prod.gold_call_detail` (Delta) on `call_id`.
 - Deduplicates to the **latest** verdict per `(call_id, dimension)` (window over `reviewed_at DESC`).
-- Materializes Delta table `gold_nlp_human_verdicts` with columns:
+- Materializes Delta table `audio_prod.gold_nlp_human_verdicts` with columns:
   - `call_id`, `dimension`, `winner`, `truth_value`, `notes`, `reviewer_email`, `reviewed_at`, plus joined gold-layer context (`audio_timestamp`, `topic_ai_query`, etc.)
-- Orchestrated by the existing `stt_main` job — runs after `stt_gold_layer`.
+- **Deployed only in the `prod` bundle target.** Orchestrated by the existing `stt_main` job — runs after `stt_gold_layer`.
 
 ### 6. MLflow eval extension
 
 In [`speech_to_text_asset_bundle/src/stt_nlp_evaluation/`](../speech_to_text_asset_bundle/src/stt_nlp_evaluation/), extend the existing notebook to:
 
-- Join `gold_nlp_human_verdicts` with the silver NLP tables on `call_id`
+- Join `audio_prod.gold_nlp_human_verdicts` with the silver NLP tables on `call_id`
 - For `winner ∈ {ai_query, ai_func}`: count as a correct label for that implementation
 - For `winner = 'neither'`: count as miss for both, optionally use `truth_value` for further scoring
 - Log per-implementation accuracy / precision / recall per `dimension` to MLflow, alongside the existing LLM-judge metrics
 
 The MLflow run output gains four new metrics (or eight, four per implementation):
 
-```
+```text
 ai_query_sentiment_accuracy   = correct / total verdicts on sentiment
 ai_func_sentiment_accuracy    = ...
 ai_query_topic_accuracy       = ...
@@ -287,21 +274,21 @@ ai_func_summary_win_rate      = ...
 ... (entities similarly)
 ```
 
+The notebook conditionally skips these metrics if `audio_prod.gold_nlp_human_verdicts` is empty or missing (so dev / per-developer eval runs degrade gracefully).
+
 ## Implementation phases
 
-Each phase is independently shippable. Phase 0 must precede any other phase for a given environment.
+Each phase is independently shippable. Phase 0 must precede Phases 2, 4, and 5.
 
-0. **Provisioning** (per-environment, one-time):
-   - Create the Lakebase branches: `branches/development` (parent: `production`) and a `branches/dev/<developer>` per active developer (parent: `development`).
-   - Create a Postgres database in each branch.
-   - Register a UC connection + foreign catalog per branch (see § 5).
-   - Run the Postgres migration in each branch: `CREATE TABLE nlp_verdicts ...` (and optionally `review_queue` if Lakebase Sync doesn't auto-create it).
-   - Document the commands in [`docs/DATABRICKS_SETUP.md`](DATABRICKS_SETUP.md). A `make new-dev-branch SHORTNAME=fkong` helper is recommended so adding a developer is one command.
-1. **Lakehouse-side disagreements view** — add `gold_nlp_disagreements` to `stt_gold_layer` (uses `${var.schema}`, so it materializes per target). No app changes; verify rows look right in the dashboard.
-2. **Lakebase Sync** — configure one sync resource per bundle target so `review_queue` is populated in each branch. Verify rows appear in Postgres after a pipeline run for both `dev` and `prod` targets (and any developer's branch).
-3. **App rewrite** — replace todo routes/UI with verdict workbench. Add `app_name`, `postgres_branch`, `postgres_database`, `uc_connection_name` bundle variables to [`stt-appkit-lakebase/databricks.yml`](../stt-appkit-lakebase/databricks.yml) and provide a `databricks.local.yml.example` so developers can override to their own branch + app name.
-4. **UC federation + verdicts pipeline** — wire the verdicts pipeline to read `${var.uc_connection_name}.public.nlp_verdicts`. Same pipeline definition deploys to each target; the connection variable selects the source branch automatically.
-5. **MLflow eval integration** — extend the eval notebook, add new metrics to the dashboard.
+0. **Provisioning** (one-time, short):
+   - Register the UC connection + foreign catalog `lakebase_stt` for the production Lakebase database.
+   - Run the Postgres migration in the production database: `CREATE TABLE nlp_verdicts ...` (and optionally pre-create `review_queue` for clarity; Lakebase Sync will create it otherwise).
+   - Document the commands in [`docs/DATABRICKS_SETUP.md`](DATABRICKS_SETUP.md).
+1. **Disagreements view** — add `gold_nlp_disagreements` to `stt_gold_layer` (parameterized by `${var.schema}`, materialized per asset-bundle target; only the prod materialization is consumed by the verdict workflow). No app changes; verify the rows look right in the dashboard.
+2. **Lakebase Sync** — configure the sync resource scoped to the `prod` bundle target. Verify rows appear in Postgres `review_queue` after a pipeline run.
+3. **App rewrite** — replace todo routes / UI with the verdict workbench. Single deployment, no new bundle variables.
+4. **Federation pipeline** — build `stt_human_verdicts` pipeline reading `lakebase_stt.public.nlp_verdicts`, writing `audio_prod.gold_nlp_human_verdicts`. Deploys in prod target only.
+5. **MLflow eval integration** — extend the eval notebook with verdict-based metrics; guard with existence check so dev runs degrade gracefully.
 
 Phases 1–3 deliver an internal review tool even before the loopback. Phases 4–5 deliver the analytical payoff.
 
@@ -313,10 +300,7 @@ Phases 1–3 deliver an internal review tool even before the loopback. Phases 4�
 - **Reviewer auth** — Databricks Apps' on-behalf-of-user identity (uses `user_api_scopes`) vs. a simpler email captured from headers. The current `databricks.yml` has `user_api_scopes` commented out — enabling adds OAuth complexity. Decide whether to keep it simple for v1.
 - **Audit / revision** — append-only `nlp_verdicts` means revisions create new rows. Is "latest wins" the right reconciliation rule, or do we need explicit revisioning UI?
 - **Multi-tenant** — single workspace fine for v1; if multiple tenants/projects share the app later, add a `project_id` to both Postgres tables and to the Lakehouse view.
-- **Branch lifecycle** — who creates `dev/<developer>` branches: manual one-time setup, a `make new-dev-branch SHORTNAME=...` helper, or automated on first `bundle deploy`? Auto-deletion of unused branches after N days, or manual housekeeping when a developer leaves?
-- **Initial branch state** — `development` and `dev/<shortname>` branches start empty vs. copy-on-write snapshot of `production`. Snapshot gives realistic data immediately; empty is faster and avoids accidental PII in dev. Recommendation: empty for `dev/<shortname>` (developer seeds what they need), CoW snapshot for `development` (CI dev wants representative volume).
-- **App permissions per environment** — each deployed app runs as its own SP. Confirm each environment's app SP only needs `CAN_CONNECT_AND_CREATE` on its own branch, not cross-environment.
-- **Federation cost** — per-developer UC foreign catalogs may be lightly used. If cost matters, consider a single shared catalog with per-branch connections instead of per-branch catalogs.
+- **Dev testing strategy for the verdict subsystem** — read `audio_prod` data read-only? Manual `psql` inserts? Accept "no end-to-end dev test for this loop"? Decide before phase 3.
 
 ## Alternatives considered
 
@@ -324,10 +308,12 @@ Phases 1–3 deliver an internal review tool even before the loopback. Phases 4�
 - **Real-time triage** on negative-sentiment calls. Fights the architecture — the pipeline is batch, not streaming, so "real-time" would mean re-architecting upstream.
 - **Topic-based routing to teams**. Single-direction; no compelling reason to push state back to the Lakehouse.
 - **Dual-write from the app to both Postgres and Delta directly**. Avoids UC federation but creates two consistency problems (transactional + analytical). UC federation is the cleaner read-back path.
+- **Per-environment Lakebase branches + per-developer deployed apps.** Documented in the prior design version (git commit `bf81348`). Each environment gets its own Lakebase branch + UC foreign catalog + deployed app. Provides full per-developer isolation but adds operational complexity (per-developer branch creation, per-developer UC connection setup, schema-aware federation routing, per-developer app deployments). Deferred until team size or compliance requires it. Lakebase scale-to-zero keeps idle branches cheap, so this upgrade is open without architectural blockers.
 
 ## Risks and non-goals
 
 - **Not real-time.** Reviewers see calls hours after they happen — fine for evaluation, not for live agent assist.
 - **Not a labeler-quality tool.** No inter-rater agreement, no calibration, no labeler-payment workflow. v1 assumes a small trusted team.
 - **Not training data (yet).** The verdicts could fund a fine-tune in a future iteration, but v1 is evaluation only.
+- **Not multi-environment.** Verdict storage lives in `audio_prod` only; dev and per-developer MLflow runs cannot compute verdict-based metrics natively. Accept for v1; revisit if/when the team scales.
 - **Lakebase Sync GA status** — confirm the feature is available in the target workspace tier before committing to it; fallback is a scheduled Spark JDBC write job.
