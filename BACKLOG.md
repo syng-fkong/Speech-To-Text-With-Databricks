@@ -2,6 +2,37 @@
 
 Deferred work and open design decisions. Add new sections at the top; oldest at the bottom.
 
+## Feature ideas to deepen the Lakehouse ↔ Lakebase demo story
+
+**Captured:** 2026-05-14. Candidate features for [stt-appkit-lakebase/](stt-appkit-lakebase/) that go beyond the current verdict workbench. Grouped by the integration pattern each one would showcase; not yet scoped or sequenced. Rough recommended demo bundle: **#1 + #3 + #4** is the tightest 15-minute story; **#2** and **#8** are the strongest *narrative* additions because they show writes that change downstream Lakehouse behavior.
+
+### A. Closing the RLHF loop (strongest demo story)
+
+- **#1 — In-app evaluation dashboard tab.** New `/eval` page that runs a federated SQL query against Lakehouse (via Databricks SDK / SQL warehouse) over `gold_nlp_human_verdicts` + `gold_nlp_disagreements` and renders per-dimension human-vs-ai_query win rate (same metrics the MLflow notebook logs), reviewer throughput, agreement-with-majority, top topics with disagreement. Adds the missing third leg of the integration: app **reads from Lakehouse via UC**, not just sync-from + federate-back.
+- **#2 — Free-text "preferred answer" capture.** Reviewer rewrites the summary / edits entities. Push to a new `app.nlp_corrections` table; federate back into Lakehouse alongside `gold_nlp_human_verdicts`; MLflow eval computes ROUGE / cosine vs the human-preferred answer instead of (or in addition to) the binary verdict. Showcases structured + unstructured writeback in the same federation pipeline.
+- **#3 — AI third-opinion button.** "What does another model think?" calls Foundation Model APIs via `ai_query` (Claude Sonnet 4.6 or Llama as tie-breaker) and renders the verdict next to the two NLP implementations. Optionally persist into `app.nlp_meta_verdicts` for later comparison against human verdicts in eval.
+
+### B. Showcasing Lakebase low-latency strengths
+
+- **#4 — Live queue depth + reviewer presence.** Top bar shows "N disagreements pending · M reviewers active · you claimed K today". Use Postgres `LISTEN/NOTIFY` (or a 2s poll on `app.review_state`) for live updates. Lock a call to a reviewer while open ("Alex is reviewing this — claim anyway?"). Makes the OLTP value prop explicit — today Lakebase looks like just a fast read replica.
+- **#5 — Bulk-mode triage.** Multi-select queue rows; submit "agree with ai_func for all of these" in one atomic Postgres transaction. Showcases transactional multi-row writes that then flow back through federation.
+
+### C. Cross-system semantic features
+
+- **#6 — Semantic transcript search.** Build a Vector Search index over `silver_audio_transcription`; expose a search box in the app that calls the VS index via the SDK. "Find similar calls" button on the detail page seeds the query with the current transcript. Showcases Vector Search + Lakebase as two operational Databricks data stores serving one app. Pairs naturally with #3.
+- **#7 — Embedded Genie panel on the detail page.** Drop a Genie iframe / API call into a side panel, pre-filtered to the current call's topic/date. The Genie Space is already provisioned by the `stt_genie` job. Showcases AI/BI Genie + Lakebase OLTP + Lakehouse analytics in one screen.
+
+### D. Write-back that changes pipeline behavior
+
+- **#8 — Flag for re-transcription / re-enrichment.** Reviewer marks calls where transcription quality is poor or model output is nonsense. Writes to a new `app.reingest_requests` table; a SDP transformation reads it via federation and feeds those paths back into `stt_audio_transcription` with `temperature=0` / longer-context Whisper params. Different federation pattern from current (verdicts score already-processed calls; reingest requests change *what's processed next run*).
+
+### Open questions before scoping any of these
+
+- Which (if any) require new Lakebase tables outside the current `review_queue` / `review_state` / `nlp_verdicts` split? Anything new should follow the Phase 2.1 ownership rule: sync-owned vs app-owned.
+- For #1 specifically: does the app's SP have SQL warehouse access? Need a warehouse handle, not just the Postgres connection.
+- For #3 and #6: `ai_query` from inside the app vs from a serving endpoint — which is cheaper to wire and which makes a better demo narrative?
+- For #8: closing the loop requires the next pipeline run to reset the request status. Where does that bookkeeping live — app-side or pipeline-side?
+
 ## NLP Verdict Workbench — replace todo template with a real use case
 
 **Deferred:** 2026-05-13.

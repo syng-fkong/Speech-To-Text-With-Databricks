@@ -26,11 +26,12 @@ This repository implements an end-to-end speech-to-text (STT) pipeline on Databr
 
 - ✅ **Audio Ingestion & Transcription** — Auto Loader picks up audio files and Whisper transcribes them
 - ✅ **NLP Enrichment** — Sentiment, summary, entities, topic, and translation via two parallel implementations
-- ✅ **MLflow Evaluation** — Side-by-side quality comparison of AI SQL functions vs Foundation Model API
+- ✅ **MLflow Evaluation** — Side-by-side quality comparison of AI SQL functions vs Foundation Model API, plus per-dimension human-verdict win rates
 - ✅ **Automated CI/CD** — GitHub Actions deploy to Dev and Prod environments
 - ✅ **Infrastructure as Code** — Databricks Asset Bundle with dev/prod targets
 - ✅ **Dashboard** — Databricks AI/BI dashboard for monitoring transcription and NLP results
 - ✅ **Genie Space** — Natural language interface for querying the gold layer tables
+- ✅ **NLP Verdict Workbench** — Databricks App + Lakebase Postgres for human-in-the-loop review of NLP disagreements; verdicts flow back into Delta via UC federation and feed the MLflow evaluation as ground truth
 
 ---
 
@@ -134,7 +135,7 @@ Both workflows use GitHub OIDC for secure, token-less authentication with Databr
 
 ![Databricks Audio Intelligence Pipeline](docs/images/DataflowDiagram.png)
 
-All four stages are orchestrated by the `stt_main` job: transcription → NLP enrichment → gold layer update and MLflow evaluation in parallel.
+All four stages are orchestrated by the `stt_main` job: transcription → NLP enrichment → gold layer → MLflow evaluation. The evaluation step depends on the gold layer so that human-verdict metrics (from `gold_nlp_human_verdicts`, federated from Lakebase) see the latest snapshot.
 
 ### Technologies
 
@@ -191,9 +192,11 @@ See [speech_to_text_asset_bundle/README.md](speech_to_text_asset_bundle/README.m
 
 - **[Databricks Setup](docs/DATABRICKS_SETUP.md)** — Service principal, catalog, and federation policy configuration
 - **[GitHub Actions Setup](docs/GITHUB_ACTIONS_SETUP.md)** — GitHub environments, variables, and secrets
-- **[Solution Architecture](docs/SOLUTION_ARCHITECTURE.md)** — Technical deep-dive into pipeline design and data flow
 - **[Environment Setup Overview](docs/ENVIRONMENT_SETUP.md)** — Quick setup checklist and documentation index
+- **[Solution Architecture](docs/SOLUTION_ARCHITECTURE.md)** — Medallion architecture summary and pointers to per-component references
 - **[Bundle README](speech_to_text_asset_bundle/README.md)** — Pipeline architecture, data schemas, and configuration reference
+- **[Lakehouse ↔ Lakebase Integration](docs/LAKEHOUSE_LAKEBASE_INTEGRATION.md)** — Operational reference for the verdict workbench wiring (foreign catalog, sync, federation pipeline)
+- **[NLP Verdict Workbench Design](docs/NLP_VERDICT_WORKBENCH_DESIGN.md)** — Design rationale for the human-in-the-loop review tool
 - **[Copilot Agents](docs/copilot-agents.md)** — Custom AI agents available in this repository
 
 ### External References

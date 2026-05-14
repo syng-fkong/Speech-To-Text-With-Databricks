@@ -200,17 +200,16 @@ databricks bundle run app -t prod
 
 ## Project Structure
 
-```
-* client/          # React frontend
-  * src/           # Source code
-  * public/        # Static assets
-* server/          # Express backend
-  * server.ts      # Server entry point
-  * routes/        # Routes
-* shared/          # Shared types
-* databricks.yml   # Bundle configuration
-* app.yaml         # App configuration
-* .env.example     # Environment variables example
+```text
+* client/                                   # React frontend
+  * src/pages/lakebase/                     # Queue + diff/verdict pages
+* server/                                   # Express backend
+  * server.ts                               # Server entry point (AppKit bootstrap)
+  * routes/lakebase/verdict-routes.ts       # Verdict workbench API (review queue, claim/release, verdicts)
+* tests/                                    # Playwright smoke tests
+* databricks.yml                            # Bundle configuration (app + Postgres binding)
+* app.yaml                                  # Databricks App runtime configuration
+* appkit.plugins.json                       # AppKit plugin manifest
 ```
 
 ## Tech Stack

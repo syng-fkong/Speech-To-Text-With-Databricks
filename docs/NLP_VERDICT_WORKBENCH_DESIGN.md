@@ -4,6 +4,16 @@
 **Drafted:** 2026-05-13.
 **Owners:** TBD.
 
+> **Implementation deviations from this design** (use [LAKEHOUSE_LAKEBASE_INTEGRATION.md](LAKEHOUSE_LAKEBASE_INTEGRATION.md) as the source of truth for as-built specifics):
+>
+> - **Postgres key column** is `path` (the gold view's join key), not `call_id` as proposed below.
+> - **Postgres schema** is `app`, not `public` — the app SP lacks `CREATE` on `public`.
+> - **Workflow state was split out** in Phase 2.1: `app.review_queue` is sync-owned (read-only); `app.review_state` is the new app-owned table for `status` / `claimed_by` / `claimed_at`. The schema below shows `status` columns inside `review_queue` — those moved.
+> - **Server routes** are flat (`POST /api/review-queue/claim` with `{path}` body) rather than the path-style `:call_id/claim` URLs sketched below. See [`server/routes/lakebase/verdict-routes.ts`](../stt-appkit-lakebase/server/routes/lakebase/verdict-routes.ts).
+> - **Federation pipeline** ships as a new `@dp.table` inside the existing `stt_gold_layer` SDP pipeline ([`gold_nlp_human_verdicts.py`](../speech_to_text_asset_bundle/src/stt_gold_layer/transformations/gold_nlp_human_verdicts.py)), not as a separate `stt_human_verdicts` pipeline — same compute, simpler resource graph.
+> - **UC federation source** is `lakebase_stt.app.nlp_verdicts`, not `lakebase_stt.public.nlp_verdicts`.
+> - **MLflow eval metrics**: actual logged metrics are per-dimension `ai_query` / `ai_func` / `neither` / `both_acceptable` shares plus decisive win rates (not the `accuracy` / `precision` / `recall` set sketched below).
+
 ## Summary
 
 A human-in-the-loop review tool that closes the loop between the existing dual-NLP analytical pipeline ([`speech_to_text_asset_bundle/`](../speech_to_text_asset_bundle/)) and the Databricks App ([`stt-appkit-lakebase/`](../stt-appkit-lakebase/)). Reviewers see calls where the two NLP implementations (`silver_audio_nlp_ai_query` from Foundation Model API and `silver_audio_nlp_ai_func` from AI SQL functions) disagree, pick a verdict per disagreement dimension, and those verdicts flow back to a Delta table that the existing MLflow evaluation notebook consumes as ground truth.

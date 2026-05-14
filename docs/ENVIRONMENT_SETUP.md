@@ -7,18 +7,22 @@
 ## Setup Documentation
 
 ### 1. Databricks Setup
+
 **[docs/DATABRICKS_SETUP.md](DATABRICKS_SETUP.md)**
 
 Complete guide for configuring Databricks resources:
+
 - Creating the service principal
 - Setting up the catalog and schemas
 - Configuring OIDC federation policies for GitHub Actions
 - Granting permissions
 
 ### 2. GitHub Actions Setup
+
 **[docs/GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md)**
 
 Complete guide for configuring GitHub Actions CI/CD:
+
 - Creating GitHub Environments (Dev and Prod)
 - Configuring environment variables and secrets
 - Testing the configuration
@@ -35,7 +39,6 @@ Complete guide for configuring GitHub Actions CI/CD:
 - [ ] **GitHub**: Create Dev and Prod environments
 - [ ] **GitHub**: Add `DATABRICKS_HOST` variable to both environments
 - [ ] **GitHub**: Add `DATABRICKS_CLIENT_ID` secret to both environments
-- [ ] **Databricks**: Create Git folder at `/Workspace/Shared/Speech-To-Text-With-Databricks` (Dev only)
 - [ ] **Test**: Push to `dev` branch and verify workflow succeeds
 
 ---

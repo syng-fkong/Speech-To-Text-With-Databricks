@@ -92,7 +92,9 @@ speech_to_text_asset_bundle/
     │   └── silver_audio_nlp_ai_query.py            # NLP via Foundation Model (ai_query)
     ├── stt_gold_layer/transformations/
     │   ├── gold_audio_sentiment_analysis.py        # Gold detail table (flattened entities, metrics)
-    │   └── gold_aggregates.py                      # gold_audio_daily_stats + gold_audio_sentiment_by_topic
+    │   ├── gold_aggregates.py                      # gold_audio_daily_stats + gold_audio_sentiment_by_topic
+    │   ├── gold_nlp_disagreements.py               # Disagreement-trigger rows (feeds Lakebase Sync)
+    │   └── gold_nlp_human_verdicts.py              # Human verdicts read back via UC federation
     ├── dashboards/
     │   └── stt_analytics.lvdash.json               # AI/BI dashboard definition (Lakeview format)
     ├── stt_infrastructure/
@@ -113,7 +115,7 @@ Contains YAML definitions for all Databricks resources:
 - **`stt_dashboard.dashboard.yml`** — AI/BI (Lakeview) dashboard resource. Points to `src/dashboards/stt_analytics.lvdash.json` and resolves the catalog/schema at deploy time via `dataset_catalog` / `dataset_schema`, so the same JSON works in both dev and prod.
 - **`stt_infrastructure.job.yml`** — One-time job that creates or updates the shared Whisper Model Serving endpoint and grants `CAN_QUERY` to all workspace users. The endpoint is **not** managed by the bundle lifecycle (to avoid ownership conflicts between developers and the CI/CD service principal) — run this job once after the first deployment and whenever the endpoint configuration needs to change. Idempotent.
 - **`stt_genie.job.yml`** — One-time setup job that creates or updates the Genie Space by running `src/stt_genie/create_genie_space.py`. Idempotent: matches by display name and updates if found, creates otherwise. Run after the first deployment and whenever the space configuration changes.
-- **`stt_main.job.yml`** — Orchestration job that chains all three pipelines in sequence, then runs the MLflow evaluation notebook in parallel with the gold layer update.
+- **`stt_main.job.yml`** — Orchestration job that chains all three pipelines (transcription → NLP enrichment → gold layer), then runs the MLflow evaluation notebook. The evaluation depends on the gold layer (rather than running in parallel with it) so that human-verdict metrics from `gold_nlp_human_verdicts` reflect the latest snapshot.
 
 ### `/src/stt_gold_layer/transformations/`
 
@@ -121,6 +123,8 @@ Contains YAML definitions for all Databricks resources:
 - **`gold_aggregates.py`** — Two aggregate tables:
   - `gold_audio_daily_stats` — counts, unique files, avg length/word count grouped by `_ingested_date × topic × sentiment`
   - `gold_audio_sentiment_by_topic` — pivot table with topics as rows and sentiment labels as columns (counts per cell)
+- **`gold_nlp_disagreements.py`** — Trigger view for the NLP Verdict Workbench: rows where the two silver NLP implementations disagree on any dimension (sentiment / topic / Jaccard-low entity sets / summary cosine placeholder). Materialised in every target's schema; `audio_prod` is the source for Lakebase Sync into `app.review_queue`.
+- **`gold_nlp_human_verdicts.py`** — Federation read-back: dedupes the latest verdict per `(path, dimension)` from `lakebase_stt.app.nlp_verdicts` (UC foreign catalog over Lakebase Postgres), joins with `gold_audio_sentiment_analysis` for call context, writes Delta. Consumed by the MLflow evaluation notebook for human-verdict win-rate metrics. See [../docs/LAKEHOUSE_LAKEBASE_INTEGRATION.md](../docs/LAKEHOUSE_LAKEBASE_INTEGRATION.md) for the end-to-end wiring.
 
 #### Auto Loader Schema Metadata
 
@@ -152,7 +156,7 @@ The bundle supports two deployment targets:
 #### **Dev Target** (Default)
 
 - **Catalog**: `speech_to_text`
-- **Schema**: `audio` (CI/CD) · `audio_<shortname>` (local developer override — see below)
+- **Schema**: `audio_dev` (CI/CD) · `audio_<shortname>` (local developer override — see below)
 - **Mode**: Development (pipelines run in development mode)
 - **Deployment path**: `/Workspace/Shared/.bundle/speech_to_text_asset_bundle/dev` (CI/CD) · `/Workspace/Users/<email>/.bundle/…` (local)
 - **Resources created**: schema + `files` managed volume
@@ -218,12 +222,12 @@ This job is idempotent — safe to re-run if the endpoint configuration changes.
 
 CI/CD authenticates as the service principal via GitHub OIDC. `databricks.local.yml` is never present in the CI runner — the bundle uses only `databricks.yml` defaults.
 
-| Event          | Workflow                                    | What it does                                                                                              |
-|----------------|---------------------------------------------|-----------------------------------------------------------------------------------------------------------|
-| Push to `dev`  | `sync_git_folder_and_deploy_adb_dev.yml`    | Syncs Git folder in workspace → validates → plans → binds pre-existing resources → deploys to dev target  |
-| Push to `main` | `sync_git_folder_and_deploy_adb_prod.yml`   | Deploys to prod target (no Git folder sync)                                                               |
+| Event          | Workflow                  | What it does                                                                                  |
+|----------------|---------------------------|-----------------------------------------------------------------------------------------------|
+| Push to `dev`  | `deploy_adb_dev.yml`      | Validates → plans → binds pre-existing schema + volume → deploys to dev target                |
+| Push to `main` | `deploy_adb_prod.yml`     | Validates → plans → binds pre-existing schema → deploys to prod target                        |
 
-The **bind** step (`databricks bundle deployment bind`) imports pre-existing Unity Catalog resources (schema, volume) into the bundle's Terraform state so they are managed in-place rather than re-created. It runs with `|| true` so a first-time deployment (where those resources don't exist yet) is non-fatal.
+The **bind** step (`databricks bundle deployment bind`) imports pre-existing Unity Catalog resources into the bundle's Terraform state so they are managed in-place rather than re-created. Dev binds both the schema and the `files` volume; prod binds only the schema. Each bind runs with `|| true` so a first-time deployment (where those resources don't exist yet) is non-fatal.
 
 See [docs/GITHUB_ACTIONS_SETUP.md](../docs/GITHUB_ACTIONS_SETUP.md) for environment and secret configuration.
 
@@ -352,15 +356,17 @@ The **`files` volume** stores:
 
 ### Pipeline Tables
 
-| Table                            | Layer  | Pipeline                  | Description                                                       |
-|----------------------------------|--------|---------------------------|-------------------------------------------------------------------|
-| `bronze_audio_files_raw`         | Bronze | stt_audio_transcription   | Raw audio file metadata from Auto Loader, append-only             |
-| `silver_audio_transcription`     | Silver | stt_audio_transcription   | Transcription text produced by Whisper via `ai_query()`           |
-| `silver_audio_nlp_ai_func`       | Silver | stt_nlp_enrichment        | NLP enrichment via Databricks AI SQL functions                    |
-| `silver_audio_nlp_ai_query`      | Silver | stt_nlp_enrichment        | NLP enrichment via Foundation Model API (`ai_query()`)            |
-| `gold_audio_sentiment_analysis`  | Gold   | stt_gold_layer            | Full detail: joined NLP + metadata, flattened entities, metrics   |
-| `gold_audio_daily_stats`         | Gold   | stt_gold_layer            | Daily aggregation by date × topic × sentiment                     |
-| `gold_audio_sentiment_by_topic`  | Gold   | stt_gold_layer            | Sentiment cross-tab per business domain (pivot table)             |
+| Table                            | Layer  | Pipeline                | Description                                                                       |
+|----------------------------------|--------|-------------------------|-----------------------------------------------------------------------------------|
+| `bronze_audio_files_raw`         | Bronze | stt_audio_transcription | Raw audio file metadata from Auto Loader, append-only                             |
+| `silver_audio_transcription`     | Silver | stt_audio_transcription | Transcription text produced by Whisper via `ai_query()`                           |
+| `silver_audio_nlp_ai_func`       | Silver | stt_nlp_enrichment      | NLP enrichment via Databricks AI SQL functions                                    |
+| `silver_audio_nlp_ai_query`      | Silver | stt_nlp_enrichment      | NLP enrichment via Foundation Model API (`ai_query()`)                            |
+| `gold_audio_sentiment_analysis`  | Gold   | stt_gold_layer          | Full detail: joined NLP + metadata, flattened entities, metrics                   |
+| `gold_audio_daily_stats`         | Gold   | stt_gold_layer          | Daily aggregation by date × topic × sentiment                                     |
+| `gold_audio_sentiment_by_topic`  | Gold   | stt_gold_layer          | Sentiment cross-tab per business domain (pivot table)                             |
+| `gold_nlp_disagreements`         | Gold   | stt_gold_layer          | Rows where the two silver NLP implementations disagree (verdict workbench feed)   |
+| `gold_nlp_human_verdicts`        | Gold   | stt_gold_layer          | Latest human verdicts federated from Lakebase Postgres                            |
 
 ---
 
@@ -415,7 +421,7 @@ Ensure the service principal has:
 **Solution:**
 
 1. Ensure the `_schema_metadata` folder is not inside the audio file source path
-2. Verify `schema_location_base` is set correctly in `stt_audio_ingestion.pipeline.yml`
+2. Verify `schema_location_base` is set correctly in `stt_audio_transcription.pipeline.yml`
 3. The service principal needs `WRITE VOLUME` permission on the `files` volume
 
 ### Volume Access Issues
@@ -442,7 +448,8 @@ Ensure the service principal has:
 1. ✅ **Bronze & Silver Transcription** — Auto Loader ingests audio, Whisper transcribes via Model Serving
 2. ✅ **NLP Enrichment** — Sentiment, summary, entities, topic, and translation (two parallel implementations)
 3. ✅ **Gold Layer** — Analysis-ready detail and aggregate tables built from the enriched silver data
-4. ✅ **NLP Quality Evaluation** — MLflow GenAI evaluation comparing both NLP implementations
+4. ✅ **NLP Quality Evaluation** — MLflow GenAI evaluation comparing both NLP implementations, plus per-dimension human-verdict win rates
 5. ✅ **Dashboard** — AI/BI Lakeview dashboard deployed via Asset Bundle on top of the gold layer tables
 6. ✅ **Genie Space** — Natural language interface for querying `gold_audio_sentiment_analysis`
 7. ✅ **Shared Infrastructure** — Whisper endpoint provisioned once via `stt_infrastructure_setup` (outside bundle lifecycle)
+8. ✅ **Lakehouse ↔ Lakebase Integration** — `gold_nlp_disagreements` feeds the [stt-appkit-lakebase](../stt-appkit-lakebase/) verdict workbench via Lakebase Sync; reviewer verdicts flow back into `gold_nlp_human_verdicts` via UC federation. See [../docs/LAKEHOUSE_LAKEBASE_INTEGRATION.md](../docs/LAKEHOUSE_LAKEBASE_INTEGRATION.md).
