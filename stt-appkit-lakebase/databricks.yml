@@ -11,7 +11,7 @@ resources:
   apps:
     app:
       name: "stt-appkit-lakebase"
-      description: "Node.js app with Lakebase Autoscaling (Postgres) CRUD operations"
+      description: "NLP Verdict Workbench — human-in-the-loop review of dual-NLP disagreements for the speech-to-text pipeline. Reads gold_nlp_disagreements (synced from Lakehouse via Lakebase Sync) and writes verdicts that flow back into Delta via UC federation."
       source_code_path: ./
       # Uncomment to enable on behalf of user API scopes. Available scopes: sql, dashboards.genie, files.files
       # user_api_scopes:

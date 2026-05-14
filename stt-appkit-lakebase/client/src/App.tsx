@@ -19,13 +19,13 @@ function Layout() {
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <header className="border-b px-6 py-3 flex items-center gap-4">
-        <h1 className="text-lg font-semibold text-foreground">appkit-lakebase</h1>
+        <h1 className="text-lg font-semibold text-foreground">NLP Verdict Workbench</h1>
         <nav className="flex gap-1">
           <NavLink to="/" end className={navLinkClass}>
             Home
           </NavLink>
           <NavLink to="/lakebase" className={navLinkClass}>
-            Lakebase
+            Review queue
           </NavLink>
         </nav>
       </header>
@@ -57,41 +57,37 @@ function HomePage() {
     <div className="max-w-2xl mx-auto space-y-6 mt-8">
       <div className="text-center">
         <h2 className="text-3xl font-bold mb-2 text-foreground">
-          Welcome to your Databricks App
+          NLP Verdict Workbench
         </h2>
         <p className="text-lg text-muted-foreground">
-          Powered by Databricks AppKit
+          Human-in-the-loop review for the speech-to-text NLP pipeline.
         </p>
       </div>
 
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle>Getting Started</CardTitle>
+          <CardTitle>How it works</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-sm text-muted-foreground">Your app is ready. Explore the resources below to continue building.</p>
-          <ul className="space-y-2 text-sm">
-            <li>
-              <a
-                href="https://github.com/databricks/appkit"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary underline underline-offset-4 hover:text-primary/80"
-              >
-                AppKit on GitHub →
-              </a>
-            </li>
-            <li>
-              <a
-                href="https://databricks.github.io/appkit/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary underline underline-offset-4 hover:text-primary/80"
-              >
-                AppKit documentation →
-              </a>
-            </li>
-          </ul>
+        <CardContent className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            The asset bundle runs two NLP implementations in parallel — Databricks AI SQL
+            functions and a Foundation Model API. When they disagree on a call&rsquo;s
+            sentiment, topic, or extracted entities, that call lands in the review queue here.
+          </p>
+          <p className="text-muted-foreground">
+            For each disagreement you pick a winner (AI SQL / FM API / Neither / Both
+            acceptable), optionally provide the ground truth, and submit. Verdicts flow back
+            into Delta via UC federation and feed the existing MLflow evaluation as human
+            ground truth.
+          </p>
+          <div className="pt-2">
+            <NavLink
+              to="/lakebase"
+              className="inline-block px-4 py-2 rounded-md bg-primary text-primary-foreground font-medium hover:bg-primary/90"
+            >
+              Open review queue →
+            </NavLink>
+          </div>
         </CardContent>
       </Card>
     </div>

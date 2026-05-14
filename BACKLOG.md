@@ -33,6 +33,10 @@ Six independently-shippable phases:
 
 Full schemas, route shapes, wiring rule, open questions, alternatives, and the deferred multi-environment design in [docs/NLP_VERDICT_WORKBENCH_DESIGN.md](docs/NLP_VERDICT_WORKBENCH_DESIGN.md).
 
+## Tiny cleanups (low priority)
+
+- **Drop orphan `app.todos` Postgres table.** Left over from the AppKit-Lakebase todo template (Phase 3 replaced the code but the original table is owned by the app SP and can't be dropped from `databricks psql` as a human user). Harmless (empty, unused). To clean up: temporarily add a `DROP TABLE app.todos` to the app's startup setup or a one-shot admin route, deploy once, then remove. Not worth a deploy cycle on its own — bundle it with a future Phase 3 change.
+
 ## CI/CD for `stt-appkit-lakebase` app
 
 **Deferred:** 2026-05-12.

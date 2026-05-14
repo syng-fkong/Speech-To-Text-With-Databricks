@@ -2,41 +2,16 @@ import { test, expect } from '@playwright/test';
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-// ── Templated configuration (resolved by `databricks apps init`) ────────────
-const APP_CONFIG = {
-  name: 'appkit-lakebase',
-  plugins: [
-    'lakebase',
-  ],
-} as const;
+// Smoke tests for the NLP Verdict Workbench app shell.
+// These confirm the app boots, renders the home page, and the review queue route
+// loads without runtime errors. They don't exercise the actual verdict-submit
+// flow because that needs both Lakebase Sync (Phase 2) and verdicts in the
+// queue — covered manually in docs/LAKEHOUSE_LAKEBASE_INTEGRATION.md.
 
-interface PluginPage {
-  navLabel: string;
-  path: string;
-  expectedTexts: string[];
-}
-
-const PLUGIN_PAGES: Record<string, PluginPage> = {
-  analytics: {
-    navLabel: 'Analytics',
-    path: '/analytics',
-    expectedTexts: ['SQL Query Result', 'Sales Data Filter'],
-  },
-  lakebase: {
-    navLabel: 'Lakebase',
-    path: '/lakebase',
-    expectedTexts: ['Todo List'],
-  },
-  genie: {
-    navLabel: 'Genie',
-    path: '/genie',
-    expectedTexts: ['Ask questions about your data using Databricks AI/BI Genie'],
-  },
-};
-
-const enabledPages = Object.entries(PLUGIN_PAGES).filter(
-  ([key]) => APP_CONFIG.plugins.includes(key),
-);
+const APP_HEADER       = 'NLP Verdict Workbench';
+const QUEUE_NAV_LABEL  = 'Review queue';
+const QUEUE_PATH       = '/lakebase';
+const QUEUE_PAGE_TITLE = 'NLP Verdict Workbench — Review Queue';
 
 // ── Tests ───────────────────────────────────────────────────────────────────
 
@@ -49,27 +24,21 @@ let failedRequests: string[] = [];
 test('smoke test - app loads and displays home page', async ({ page }) => {
   await page.goto('/');
 
-  await expect(page.getByRole('heading', { name: APP_CONFIG.name })).toBeVisible();
-  await expect(
-    page.getByRole('heading', { name: 'Welcome to your Databricks App' }),
-  ).toBeVisible();
-  await expect(page.getByText('Getting Started')).toBeVisible();
-
+  // The header in the layout
+  await expect(page.getByRole('heading', { name: APP_HEADER })).toBeVisible();
+  // The home page's tagline
+  await expect(page.getByText('Human-in-the-loop review')).toBeVisible();
+  // The two nav links
   await expect(page.getByRole('link', { name: 'Home' })).toBeVisible();
-  for (const [, plugin] of enabledPages) {
-    await expect(page.getByRole('link', { name: plugin.navLabel })).toBeVisible();
-  }
+  await expect(page.getByRole('link', { name: QUEUE_NAV_LABEL })).toBeVisible();
 });
 
-for (const [name, plugin] of enabledPages) {
-  test(`smoke test - ${name} page loads`, async ({ page }) => {
-    await page.goto(plugin.path);
-
-    for (const text of plugin.expectedTexts) {
-      await expect(page.getByText(text)).toBeVisible();
-    }
-  });
-}
+test('smoke test - review queue page loads', async ({ page }) => {
+  await page.goto(QUEUE_PATH);
+  await expect(page.getByText(QUEUE_PAGE_TITLE)).toBeVisible();
+  // Dimension filter chips render even when the queue is empty
+  await expect(page.getByRole('button', { name: 'All disagreements' })).toBeVisible();
+});
 
 // ── Lifecycle hooks ─────────────────────────────────────────────────────────
 

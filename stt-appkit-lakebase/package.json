@@ -1,5 +1,5 @@
 {
-  "name": "appkit-lakebase",
+  "name": "stt-verdict-workbench",
   "version": "1.0.0",
   "main": "dist/server.js",
   "type": "module",
@@ -30,7 +30,7 @@
   "keywords": [],
   "author": "",
   "license": "Unlicensed",
-  "description": "Node.js app with Lakebase Autoscaling (Postgres) CRUD operations",
+  "description": "NLP Verdict Workbench — human-in-the-loop review of dual-NLP disagreements for the speech-to-text pipeline. Deployed as the stt-appkit-lakebase Databricks App.",
   "dependencies": {
     "@databricks/appkit": "0.21.0",
     "@databricks/appkit-ui": "0.21.0",

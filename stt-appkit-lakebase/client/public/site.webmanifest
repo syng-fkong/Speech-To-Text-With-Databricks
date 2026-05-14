@@ -1,6 +1,6 @@
 {
-  "name": "appkit-lakebase",
-  "short_name": "appkit-lakebase",
+  "name": "NLP Verdict Workbench",
+  "short_name": "Verdict Workbench",
   "icons": [
     {
       "src": "/favicon-192x192.png",

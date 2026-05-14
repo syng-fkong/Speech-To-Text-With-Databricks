@@ -1,10 +1,12 @@
-# appkit-lakebase
+# NLP Verdict Workbench
 
-A Databricks App powered by [AppKit](https://databricks.github.io/appkit/), featuring React, TypeScript, and Tailwind CSS.
+Databricks App backed by Lakebase Postgres. Human-in-the-loop review tool for the speech-to-text pipeline: reviewers see calls where the two NLP implementations disagree (sentiment / topic / summary / entities), pick a winner per dimension, and the verdicts flow back to a Delta table that the MLflow evaluation consumes as human ground truth.
 
-**Enabled plugins:**
-- **Lakebase** -- Fully managed Postgres database for transactional (OLTP) workloads on Databricks
-- **Server** -- Express HTTP server with static file serving and Vite dev mode
+- **Operational reference** (working API bodies, GRANT recipe, troubleshooting): [../docs/LAKEHOUSE_LAKEBASE_INTEGRATION.md](../docs/LAKEHOUSE_LAKEBASE_INTEGRATION.md)
+- **Design rationale**: [../docs/NLP_VERDICT_WORKBENCH_DESIGN.md](../docs/NLP_VERDICT_WORKBENCH_DESIGN.md)
+- **Deployed at** (single instance): <https://stt-appkit-lakebase-7405611527540572.12.azure.databricksapps.com>
+
+Built with [AppKit](https://databricks.github.io/appkit/) (Express + React + Tailwind). The bundle's app name stays `stt-appkit-lakebase` to keep the deployed URL stable.
 
 ## Prerequisites
 
