@@ -14,11 +14,11 @@
 
 ---
 
-## Databricks Setup Steps:
+## Databricks Setup Steps
+
 1. Create Catalog
 2. Create Service Principal and Assign Permissions
 3. Create the OIDC federation policies
-4. Create the Git Folder in the Workspace
 
 ## 1. Create the Catalog
 
@@ -97,7 +97,8 @@ GRANT USE SCHEMA, CREATE TABLE, SELECT, MODIFY ON SCHEMA speech_to_text.audio_pr
 ### Step 2.4: Grant Read Access to Human Users
 
 For each developer or analyst who needs to query tables via dashboards or Genie,
-replace `<user_email>` with their Databricks account email address.
+replace `<user_email>` with their Databricks account email address. Grant on
+both `audio_dev` and `audio_prod` (or just the schema(s) they need).
 
 ```sql
 -- ============================================================
@@ -109,12 +110,12 @@ replace `<user_email>` with their Databricks account email address.
 GRANT USE CATALOG ON CATALOG speech_to_text
   TO `<user_email>`;
 
--- Allow navigating into the schema
-GRANT USE SCHEMA ON SCHEMA speech_to_text.audio
+-- Allow navigating into and reading the dev schema
+GRANT USE SCHEMA, SELECT ON SCHEMA speech_to_text.audio_dev
   TO `<user_email>`;
 
--- Read access on all current and future tables in the schema
-GRANT SELECT ON SCHEMA speech_to_text.audio
+-- Allow navigating into and reading the prod schema
+GRANT USE SCHEMA, SELECT ON SCHEMA speech_to_text.audio_prod
   TO `<user_email>`;
 ```
 
@@ -170,23 +171,6 @@ databricks account service-principal-federation-policy create <SERVICE_PRINCIPAL
 
 ---
 
-## 4. Create Git Repository in Databricks (Dev Only)
-
-For the Dev environment, which uses Git folder synchronization:
-
-1. Open your Databricks workspace
-2. Navigate to **Workspace** → **Shared**
-3. Click **Create** → **Git folder**
-4. Enter your repository URL: `https://github.com/<your-org>/<your-repo-name>`
-   - Example: `https://github.com/alessandro9110/Speech-To-Text-With-Databricks`
-5. Name the folder: `Speech-To-Text-With-Databricks` (or your repository name)
-6. Default branch: `dev`
-7. Click **Create**
-
-**Note**: If you forked this repository, use your fork's URL. This step is only required for the Dev environment. The Prod environment uses direct asset bundle deployment.
-
----
-
 ## Verification
 
 After completing the setup:
@@ -209,16 +193,10 @@ After completing the setup:
 ### Federation Policy Authentication Fails
 
 **Solution**:
+
 - Verify the subject pattern exactly matches: `repo:<org>/<repo>:environment:<env>`
 - Confirm the service principal UUID is correct in the audiences field
 - Check that GitHub Actions has `id-token: write` permission
-
-### Git Folder Sync Fails
-
-**Solution**:
-- Verify the Git folder exists at `/Workspace/Shared/Speech-To-Text-With-Databricks`
-- Ensure the service principal has `CAN_MANAGE` permission on the folder
-- Check that the repository URL and branch are correct
 
 ---
 

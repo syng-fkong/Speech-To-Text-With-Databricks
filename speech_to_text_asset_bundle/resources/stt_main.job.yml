@@ -75,13 +75,17 @@ resources:
             pipeline_id: ${resources.pipelines.stt_gold_layer.id}
 
         # ── Step 3b: evaluate NLP quality via MLflow ──────────────────────────
-        # Runs in parallel with run_gold_layer_pipeline, after NLP enrichment succeeds.
-        # Reads silver_audio_nlp_ai_func and silver_audio_nlp_ai_query,
-        # scores both with deterministic validators and LLM judges,
-        # and logs results to the MLflow experiment.
+        # Runs after the gold layer succeeds: Phase 5 of the NLP Verdict
+        # Workbench reads gold_nlp_human_verdicts, which the gold pipeline
+        # materialises from Lakebase via UC federation. Previously parallel
+        # to the gold layer; sequenced so human-verdict metrics see the
+        # latest snapshot.
+        # Reads silver_audio_nlp_ai_func, silver_audio_nlp_ai_query, and
+        # gold_nlp_human_verdicts; scores with deterministic validators,
+        # LLM judges, and human-verdict win rates; logs to MLflow.
         - task_key: evaluate_nlp_quality
           depends_on:
-            - task_key: run_nlp_enrichment_pipeline
+            - task_key: run_gold_layer_pipeline
           notebook_task:
             notebook_path: ../src/stt_nlp_evaluation/evaluation/nlp_quality_evaluation.ipynb
             base_parameters:

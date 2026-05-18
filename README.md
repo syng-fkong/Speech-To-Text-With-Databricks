@@ -26,11 +26,12 @@ This repository implements an end-to-end speech-to-text (STT) pipeline on Databr
 
 - ✅ **Audio Ingestion & Transcription** — Auto Loader picks up audio files and Whisper transcribes them
 - ✅ **NLP Enrichment** — Sentiment, summary, entities, topic, and translation via two parallel implementations
-- ✅ **MLflow Evaluation** — Side-by-side quality comparison of AI SQL functions vs Foundation Model API
+- ✅ **MLflow Evaluation** — Side-by-side quality comparison of AI SQL functions vs Foundation Model API, plus per-dimension human-verdict win rates
 - ✅ **Automated CI/CD** — GitHub Actions deploy to Dev and Prod environments
 - ✅ **Infrastructure as Code** — Databricks Asset Bundle with dev/prod targets
 - ✅ **Dashboard** — Databricks AI/BI dashboard for monitoring transcription and NLP results
 - ✅ **Genie Space** — Natural language interface for querying the gold layer tables
+- ✅ **NLP Verdict Workbench** — Databricks App + Lakebase Postgres for human-in-the-loop review of NLP disagreements; verdicts flow back into Delta via UC federation and feed the MLflow evaluation as ground truth
 
 ---
 
@@ -78,10 +79,18 @@ Speech-To-Text-With-Databricks/
 │   │   └── stt_nlp_evaluation/           # MLflow quality evaluation notebook
 │   ├── tests/                            # Unit and integration tests
 │   └── pyproject.toml                    # Python dependencies and tooling
+├── stt-appkit-lakebase/                  # NLP Verdict Workbench app (AppKit + Lakebase Postgres)
+│   ├── databricks.yml                    # Bundle config for the deployed Databricks App
+│   ├── server/routes/lakebase/           # Verdict workbench API routes (Express + Postgres)
+│   └── client/src/pages/lakebase/        # Queue + diff/verdict UI (React)
 ├── .github/workflows/                    # CI/CD automation
 │   ├── deploy_adb_dev.yml   # Deploy to Dev on push to 'dev'
 │   └── deploy_adb_prod.yml  # Deploy to Prod on push to 'main'
 ├── docs/                                 # Additional documentation
+│   ├── LAKEHOUSE_LAKEBASE_INTEGRATION.md # Operational reference for the NLP Verdict Workbench
+│   ├── NLP_VERDICT_WORKBENCH_DESIGN.md   # Design rationale for the verdict workbench
+│   └── ...
+├── BACKLOG.md                            # Deferred work + per-phase implementation tracking
 └── README.md                             # This file
 ```
 
@@ -101,6 +110,14 @@ The core Databricks solution. Contains:
 
 **For detailed documentation**, see [speech_to_text_asset_bundle/README.md](speech_to_text_asset_bundle/README.md)
 
+### `/stt-appkit-lakebase`
+
+The NLP Verdict Workbench — a Databricks App backed by Lakebase Postgres. Reviewers see calls where the two silver NLP implementations disagreed, pick a winner per dimension, and the verdicts flow back to a Delta table the MLflow evaluation reads as ground truth. End-to-end Lakehouse ↔ Lakebase integration.
+
+**Operational reference**: [docs/LAKEHOUSE_LAKEBASE_INTEGRATION.md](docs/LAKEHOUSE_LAKEBASE_INTEGRATION.md) — as-built architecture, working API bodies for catalog + sync registration, GRANT recipe, troubleshooting.
+**Design rationale**: [docs/NLP_VERDICT_WORKBENCH_DESIGN.md](docs/NLP_VERDICT_WORKBENCH_DESIGN.md) — why this exists, alternatives considered.
+**App-specific README**: [stt-appkit-lakebase/README.md](stt-appkit-lakebase/README.md) — local dev and deployment.
+
 ### `/.github/workflows`
 
 GitHub Actions workflows for CI/CD:
@@ -118,7 +135,7 @@ Both workflows use GitHub OIDC for secure, token-less authentication with Databr
 
 ![Databricks Audio Intelligence Pipeline](docs/images/DataflowDiagram.png)
 
-All four stages are orchestrated by the `stt_main` job: transcription → NLP enrichment → gold layer update and MLflow evaluation in parallel.
+All four stages are orchestrated by the `stt_main` job: transcription → NLP enrichment → gold layer → MLflow evaluation. The evaluation step depends on the gold layer so that human-verdict metrics (from `gold_nlp_human_verdicts`, federated from Lakebase) see the latest snapshot.
 
 ### Technologies
 
@@ -175,9 +192,11 @@ See [speech_to_text_asset_bundle/README.md](speech_to_text_asset_bundle/README.m
 
 - **[Databricks Setup](docs/DATABRICKS_SETUP.md)** — Service principal, catalog, and federation policy configuration
 - **[GitHub Actions Setup](docs/GITHUB_ACTIONS_SETUP.md)** — GitHub environments, variables, and secrets
-- **[Solution Architecture](docs/SOLUTION_ARCHITECTURE.md)** — Technical deep-dive into pipeline design and data flow
 - **[Environment Setup Overview](docs/ENVIRONMENT_SETUP.md)** — Quick setup checklist and documentation index
+- **[Solution Architecture](docs/SOLUTION_ARCHITECTURE.md)** — Medallion architecture summary and pointers to per-component references
 - **[Bundle README](speech_to_text_asset_bundle/README.md)** — Pipeline architecture, data schemas, and configuration reference
+- **[Lakehouse ↔ Lakebase Integration](docs/LAKEHOUSE_LAKEBASE_INTEGRATION.md)** — Operational reference for the verdict workbench wiring (foreign catalog, sync, federation pipeline)
+- **[NLP Verdict Workbench Design](docs/NLP_VERDICT_WORKBENCH_DESIGN.md)** — Design rationale for the human-in-the-loop review tool
 - **[Copilot Agents](docs/copilot-agents.md)** — Custom AI agents available in this repository
 
 ### External References

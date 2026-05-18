@@ -1,0 +1,9 @@
+version: 1
+name: "NLP Verdict Workbench"
+description: "Human-in-the-loop review of dual-NLP disagreements for the speech-to-text pipeline. Reviewers pick the better NLP implementation per dimension; verdicts feed back into the MLflow evaluation as ground truth via UC federation."
+
+resource_specs:
+  - name: "postgres"
+    description: "Lakebase Autoscaling Postgres for the review queue (sync-owned) and verdict log (app-owned)."
+    postgres_spec:
+      permission: "CAN_CONNECT_AND_CREATE"

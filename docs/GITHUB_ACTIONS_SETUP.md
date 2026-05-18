@@ -12,8 +12,8 @@
 
 This repository uses GitHub Actions to automate deployment of the Databricks Asset Bundle:
 
-- **Dev Environment**: Syncs code to Databricks Git folder and deploys bundle on push to `dev` branch
-- **Prod Environment**: Deploys bundle to production on push to `main` branch
+- **Dev Environment**: Validates, plans, binds pre-existing schema/volume, and deploys the bundle on push to `dev` branch
+- **Prod Environment**: Validates, plans, binds the pre-existing schema, and deploys the bundle to production on push to `main` branch
 
 Both workflows authenticate using **GitHub OIDC** (OpenID Connect) with short-lived tokens instead of long-lived secrets.
 
@@ -124,7 +124,7 @@ After configuring environments:
 
 1. Push a change to the `dev` branch (or manually trigger the workflow)
 2. Go to **Actions** tab in the repository
-3. Verify the "Sync Git Folder and Deploy Dev" workflow runs successfully
+3. Verify the "Deploy Dev" workflow runs successfully
 4. Check the workflow logs for any errors
 
 ---
@@ -162,17 +162,11 @@ After configuring environments:
 ### OIDC Authentication Fails
 
 **Solution**:
+
 - Verify the service principal federation policy subject matches: `repo:<org>/<repo>:environment:<Env>`
 - If you forked the repository, update the subject pattern in the federation policy
 - Ensure the service principal has workspace access
 - Check that `id-token: write` permission is set in the workflow (already present)
-
-### Workflow Cannot Update Git Folder (Dev)
-
-**Solution**:
-- Verify the Git folder exists at `/Workspace/Shared/Speech-To-Text-With-Databricks`
-- Ensure the service principal has `CAN_MANAGE` permission on the folder
-- Check that the repository URL and branch are correct
 
 ### Bundle Deployment Fails
 
